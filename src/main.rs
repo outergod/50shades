@@ -131,11 +131,12 @@ fn search(client: RequestBuilder) -> Result<SearchResponse, Error> {
     }
 }
 
-// fn query(builder: &QueryBuilder, query: &Hashmap) {
-//     let tuples: Vec<(&&str, &String)> = query.iter().collect();
-//     let client = builder.try_clone().unwrap().query(&tuples);
-//     handle_response(search(client)?);
-// }
+fn query(builder: &RequestBuilder, query: &HashMap<&str, String>) -> Result<(), Error> {
+    let tuples: Vec<(&&str, &String)> = query.iter().collect();
+    let client = builder.try_clone().unwrap().query(&tuples);
+    handle_response(search(client)?);
+    Ok(())
+}
 
 fn main() -> Result<(), ExitFailure> {
     let cli = Cli::from_args();
@@ -154,11 +155,11 @@ fn main() -> Result<(), ExitFailure> {
         .basic_auth(cli.username, Some(cli.password))
         .header(ACCEPT, "application/json");
 
-    let mut query = HashMap::new();
-    query.insert("query", cli.query.unwrap_or(String::from("*")));
+    let mut params = HashMap::new();
+    params.insert("query", cli.query.unwrap_or(String::from("*")));
 
     if let Some(limit) = cli.limit {
-        query.insert("limit", limit.to_string());
+        params.insert("limit", limit.to_string());
     }
 
     if cli.follow {
@@ -170,24 +171,19 @@ fn main() -> Result<(), ExitFailure> {
                 .sub(chrono::Duration::seconds(cli.latency))
                 .to_rfc3339_opts(SecondsFormat::Millis, true);
 
-            query.insert("from", from);
-            query.insert("to", String::from(now));
+            params.insert("from", from);
+            params.insert("to", String::from(now));
 
-            let tuples: Vec<(&&str, &String)> = query.iter().collect();
-            let client = builder.try_clone().unwrap().query(&tuples);
-            handle_response(search(client)?);
+            query(&builder, &params)?;
 
             from = String::from(now);
-
             thread::sleep(sleep);
         }
     } else {
-        query.insert("from", cli.from);
-        query.insert("to", cli.to);
+        params.insert("from", cli.from);
+        params.insert("to", cli.to);
 
-        let tuples: Vec<(&&str, &String)> = query.iter().collect();
-        let client = builder.try_clone().unwrap().query(&tuples);
-        handle_response(search(client)?);
+        query(&builder, &params)?;
     }
 
     Ok(())
