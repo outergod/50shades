@@ -14,13 +14,16 @@
 
 use chrono::prelude::*;
 use exitfailure::ExitFailure;
-use failure::Fail;
+use failure::{Error, Fail};
 use reqwest;
 use reqwest::header::ACCEPT;
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, RequestBuilder, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::map::Map;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::ops::Sub;
+use std::{thread, time};
 use structopt::StructOpt;
 use url::Url;
 
@@ -63,6 +66,18 @@ struct Cli {
     #[structopt(long = "search-to", short = "#")]
     to: String,
 
+    #[structopt(long, short)]
+    limit: Option<u64>,
+
+    #[structopt(long, short)]
+    follow: bool,
+
+    #[structopt(long, default_value = "2")]
+    latency: i64,
+
+    #[structopt(long, default_value = "1000")]
+    poll: u64,
+
     #[structopt(name = "QUERY")]
     query: Option<String>,
 }
@@ -84,13 +99,43 @@ fn handle_response(response: SearchResponse) {
     if let Some(messages) = response.messages {
         for message in messages.iter() {
             if let Some(Value::Object(m)) = message.get("message") {
-                for (key, value) in m {
-                    println!("{}: {}", key, value);
-                }
+                println!(
+                    "[{}] {}",
+                    m.get("container_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("-"),
+                    m.get("message").and_then(|v| v.as_str()).unwrap_or("-")
+                );
+
+                // for (key, value) in m {
+                //     println!("{}: {}", key, value);
+                // }
             }
         }
     }
 }
+
+fn search(client: RequestBuilder) -> Result<SearchResponse, Error> {
+    let mut response = client.send()?;
+    let body = response.text()?;
+
+    match response.status() {
+        StatusCode::OK => Ok(serde_json::from_str(&body)?),
+        StatusCode::UNAUTHORIZED => Err(ResponseError::AuthenticationFailure)?,
+        status => Err(ResponseError::Unexpected(
+            status,
+            serde_json::from_str(&body)
+                .and_then(|e: ErrorResponse| Ok(String::from(e.message)))
+                .unwrap_or(String::from("No details given")),
+        ))?,
+    }
+}
+
+// fn query(builder: &QueryBuilder, query: &Hashmap) {
+//     let tuples: Vec<(&&str, &String)> = query.iter().collect();
+//     let client = builder.try_clone().unwrap().query(&tuples);
+//     handle_response(search(client)?);
+// }
 
 fn main() -> Result<(), ExitFailure> {
     let cli = Cli::from_args();
@@ -101,33 +146,48 @@ fn main() -> Result<(), ExitFailure> {
         Ok(mut path) => {
             path.extend(&["search", "universal", "absolute"]);
         }
-        Err(()) => Err(BaseUrlError {})?,
+        Err(()) => Err(BaseUrlError)?,
     }
 
-    let client = Client::new();
-    let mut response = client
+    let builder = Client::new()
         .get(url.as_str())
         .basic_auth(cli.username, Some(cli.password))
-        .header(ACCEPT, "application/json")
-        .query(&[
-            ("query", cli.query.unwrap_or(String::from("*"))),
-            ("from", cli.from),
-            ("to", cli.to),
-            ("limit", String::from("1")),
-        ])
-        .send()?;
+        .header(ACCEPT, "application/json");
 
-    let body = response.text()?;
+    let mut query = HashMap::new();
+    query.insert("query", cli.query.unwrap_or(String::from("*")));
 
-    match response.status() {
-        StatusCode::OK => handle_response(serde_json::from_str(&body)?),
-        StatusCode::UNAUTHORIZED => Err(ResponseError::AuthenticationFailure)?,
-        status => Err(ResponseError::Unexpected(
-            status,
-            serde_json::from_str(&body)
-                .and_then(|e: ErrorResponse| Ok(String::from(e.message)))
-                .unwrap_or(String::from("No details given")),
-        ))?,
+    if let Some(limit) = cli.limit {
+        query.insert("limit", limit.to_string());
+    }
+
+    if cli.follow {
+        let mut from = cli.from;
+        let sleep = time::Duration::from_millis(cli.poll);
+
+        loop {
+            let ref now = Utc::now()
+                .sub(chrono::Duration::seconds(cli.latency))
+                .to_rfc3339_opts(SecondsFormat::Millis, true);
+
+            query.insert("from", from);
+            query.insert("to", String::from(now));
+
+            let tuples: Vec<(&&str, &String)> = query.iter().collect();
+            let client = builder.try_clone().unwrap().query(&tuples);
+            handle_response(search(client)?);
+
+            from = String::from(now);
+
+            thread::sleep(sleep);
+        }
+    } else {
+        query.insert("from", cli.from);
+        query.insert("to", cli.to);
+
+        let tuples: Vec<(&&str, &String)> = query.iter().collect();
+        let client = builder.try_clone().unwrap().query(&tuples);
+        handle_response(search(client)?);
     }
 
     Ok(())
