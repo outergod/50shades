@@ -14,22 +14,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::config;
+use crate::config::Config;
 use crate::lib;
+use crate::password;
 use chrono::prelude::*;
 use failure::Error;
-use reqwest;
-use reqwest::RequestBuilder;
 use std::collections::HashMap;
 use std::ops::Sub;
 use std::{thread, time};
 
 pub fn run(
-    builder: RequestBuilder,
+    config: Config,
+    name: String,
     from: Option<String>,
     latency: i64,
     poll: u64,
     query: Vec<String>,
 ) -> Result<(), Error> {
+    let node = config::node(&config, &name)?;
+    let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
+
     let mut params = HashMap::new();
     let mut _from = from.unwrap_or(
         Utc::now()

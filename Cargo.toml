@@ -3,10 +3,11 @@ name = "fifty_shades"
 version = "0.1.0"
 authors = ["Alexander Kahl <ak@sodosopa.io>"]
 edition = "2018"
+license = "Apache-2.0"
 
 [dependencies]
 reqwest = "0.9.19"
-keyring = "0.7.0"
+keyring = "0.7.1"
 structopt = "0.2.18"
 failure = "0.1.5"
 serde = { version = "1.0.98", features = ["derive"] }
@@ -15,6 +16,8 @@ serde_json = "1.0"
 url = "2.1.0"
 chrono = { version = "0.4", features = ["serde"] }
 exitfailure = "0.5.1"
+rpassword = "4.0"
+dirs = "2.0.2"
 
 [[bin]]
 name = "50shades"

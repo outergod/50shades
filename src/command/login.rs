@@ -16,33 +16,10 @@
 
 use crate::config;
 use crate::config::Config;
-use crate::lib;
 use crate::password;
 use failure::Error;
-use std::collections::HashMap;
 
-pub fn run(
-    config: Config,
-    name: String,
-    from: String,
-    to: String,
-    limit: Option<u64>,
-    query: Vec<String>,
-) -> Result<(), Error> {
-    let node = config::node(&config, &name)?;
-    let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
-
-    let mut params = HashMap::new();
-    lib::assign_query(&query, &mut params);
-
-    if let Some(limit) = limit {
-        params.insert("limit", limit.to_string());
-    }
-
-    params.insert("from", from);
-    params.insert("to", to);
-
-    lib::run_query(&builder, &params)?;
-
-    Ok(())
+pub fn run(config: Config, node: String) -> Result<(), Error> {
+    let config = config::node(&config, &node)?;
+    password::set(&node, &config.user)
 }

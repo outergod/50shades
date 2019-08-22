@@ -15,24 +15,17 @@
 // limitations under the License.
 
 use exitfailure::ExitFailure;
-use failure::Fail;
-use reqwest::header::ACCEPT;
-use reqwest::Client;
 use structopt::StructOpt;
-use url::Url;
 
 /// 50shades (of Graylog)
 #[derive(Debug, StructOpt)]
 #[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
 struct Cli {
-    #[structopt(long, short)]
-    host: String,
+    #[structopt(long, short, default_value = "default")]
+    node: String,
 
     #[structopt(long, short)]
-    username: String,
-
-    #[structopt(long, short)]
-    password: String,
+    config: Option<String>,
 
     #[structopt(subcommand)]
     command: Command,
@@ -40,6 +33,9 @@ struct Cli {
 
 #[derive(Debug, StructOpt)]
 enum Command {
+    #[structopt(name = "login")]
+    Login {},
+
     #[structopt(name = "query")]
     Query {
         #[structopt(long = "search-from", short = "@")]
@@ -71,60 +67,59 @@ enum Command {
     },
 }
 
-#[derive(Debug, Fail)]
-#[fail(display = "Not a valid base URL")]
-struct BaseUrlError;
+pub mod config;
+pub mod password;
 
 mod command {
     pub mod follow;
+    pub mod login;
     pub mod query;
 }
 
 fn main() -> Result<(), ExitFailure> {
     let cli = Cli::from_args();
 
-    let mut url = Url::parse(&cli.host)?;
+    let path = match cli.config {
+        None => config::default()?,
+        Some(path) => path,
+    };
 
-    match url.path_segments_mut() {
-        Ok(mut path) => {
-            path.extend(&["search", "universal", "absolute"]);
-        }
-        Err(()) => Err(BaseUrlError)?,
-    }
-
-    let builder = Client::new()
-        .get(url.as_str())
-        .basic_auth(cli.username, Some(cli.password))
-        .header(ACCEPT, "application/json");
+    let config = config::read(path)?;
 
     match cli.command {
+        Command::Login {} => command::login::run(config, cli.node)?,
+
         Command::Follow {
             from,
             latency,
             poll,
             query,
-        } => command::follow::run(builder, from, latency, poll, query)?,
+        } => command::follow::run(config, cli.node, from, latency, poll, query)?,
 
         Command::Query {
             from,
             to,
             limit,
             query,
-        } => command::query::run(builder, from, to, limit, query)?,
+        } => command::query::run(config, cli.node, from, to, limit, query)?,
     }
 
     Ok(())
 }
 
 pub mod lib {
+    use crate::config;
     use chrono::prelude::*;
     use failure::{Error, Fail};
     use reqwest;
+    use reqwest::header::ACCEPT;
+    use reqwest::Client;
     use reqwest::{RequestBuilder, StatusCode};
     use serde::{Deserialize, Serialize};
     use serde_json::map::Map;
     use serde_json::Value;
     use std::collections::HashMap;
+    use url::Url;
 
     #[derive(Serialize, Deserialize, Debug)]
     struct SearchResponse {
@@ -153,6 +148,26 @@ pub mod lib {
 
         #[fail(display = "{}: {}", _0, _1)]
         Unexpected(StatusCode, String),
+    }
+
+    #[derive(Debug, Fail)]
+    #[fail(display = "Not a valid base URL")]
+    struct BaseUrlError;
+
+    pub fn node_client(node: &config::Node, password: &str) -> Result<RequestBuilder, Error> {
+        let mut url = Url::parse(&node.url)?;
+
+        match url.path_segments_mut() {
+            Ok(mut path) => {
+                path.extend(&["search", "universal", "absolute"]);
+            }
+            Err(()) => Err(BaseUrlError)?,
+        }
+
+        Ok(Client::new()
+            .get(url.as_str())
+            .basic_auth(node.user.clone(), Some(password.clone()))
+            .header(ACCEPT, "application/json"))
     }
 
     fn handle_response(response: SearchResponse) {
