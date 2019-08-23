@@ -85,13 +85,3 @@ pub fn node<'a>(config: &'a Config, name: &str) -> Result<&'a Node, MissingNodeE
         .get(name)
         .ok_or(MissingNodeError(String::from(name)))?)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn read_config() {
-        println!("{:?}", read(String::from("/tmp/config.toml")))
-    }
-}
