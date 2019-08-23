@@ -21,9 +21,11 @@ use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 #[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
 struct Cli {
+    /// Node to query
     #[structopt(long, short, default_value = "default")]
     node: String,
 
+    /// Path to custom configuration file
     #[structopt(long, short)]
     config: Option<String>,
 
@@ -33,9 +35,11 @@ struct Cli {
 
 #[derive(Debug, StructOpt)]
 enum Command {
+    /// Stores new password for specified node
     #[structopt(name = "login")]
     Login {},
 
+    /// Performs one-time query against Graylog
     #[structopt(name = "query")]
     Query {
         #[structopt(long = "search-from", short = "@")]
@@ -51,6 +55,7 @@ enum Command {
         query: Vec<String>,
     },
 
+    /// Follows the tail of a query (like tail -f on a log file)
     #[structopt(name = "follow")]
     Follow {
         #[structopt(long = "search-from", short = "@")]
