@@ -1,0 +1,29 @@
+image: communicatio/rust:1.37.0
+
+stages:
+  - build
+
+build-linux:
+  stage: build
+  script:
+    - cargo build
+    - cargo build --release
+  artifacts:
+    paths:
+      - target/debug/50shades
+      - target/release/50shades
+    expire_in: 1 week
+
+build-macos:
+  stage: build
+  variables:
+    CC: o64-clang
+    CXX: o64-clang++
+  script:
+    - cargo build --target x86_64-apple-darwin
+    - cargo build --target x86_64-apple-darwin --release
+  artifacts:
+    paths:
+      - target/x86_64-apple-darwin/debug/50shades
+      - target/x86_64-apple-darwin/release/50shades
+    expire_in: 1 week
