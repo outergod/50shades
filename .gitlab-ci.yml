@@ -6,6 +6,7 @@ stages:
 build-linux:
   stage: build
   script:
+    - dnf install -y openssl-devel dbus-devel glibc-devel
     - cargo build
     - cargo build --release
   artifacts:
