@@ -48,8 +48,8 @@ pub fn get(node: &str, user: &str) -> Result<String, Error> {
 
     match keyring.get_password() {
         Ok(password) => Ok(password),
-        Err(KeyringError::NoPasswordFound) => Err(NoPasswordError(String::from(node)))?,
-        Err(e) => Err(PasswordFetchError(format!("{}", e)))?,
+        Err(KeyringError::NoPasswordFound) => Err(NoPasswordError(String::from(node)).into()),
+        Err(e) => Err(PasswordFetchError(format!("{}", e)).into()),
     }
 }
 
@@ -64,6 +64,6 @@ pub fn set(node: &str, user: &str) -> Result<(), Error> {
 
     match keyring.set_password(&password) {
         Ok(_) => Ok(()),
-        Err(e) => Err(PasswordStoreError(format!("{}", e)))?,
+        Err(e) => Err(PasswordStoreError(format!("{}", e)).into()),
     }
 }

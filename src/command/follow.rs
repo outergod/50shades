@@ -36,16 +36,16 @@ pub fn run(
     let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
 
     let mut params = HashMap::new();
-    let mut _from = from.unwrap_or(
+    let mut _from = from.unwrap_or_else(|| {
         Utc::now()
             .sub(chrono::Duration::seconds(latency))
-            .to_rfc3339_opts(SecondsFormat::Millis, true),
-    );
+            .to_rfc3339_opts(SecondsFormat::Millis, true)
+    });
     let sleep = time::Duration::from_millis(poll);
     lib::assign_query(&query, &mut params);
 
     loop {
-        let ref now = Utc::now()
+        let now = &Utc::now()
             .sub(chrono::Duration::seconds(latency))
             .to_rfc3339_opts(SecondsFormat::Millis, true);
 

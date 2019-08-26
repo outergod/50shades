@@ -66,8 +66,8 @@ pub fn default() -> Result<String, ConfigPathError> {
 pub fn read(path: String) -> Result<Config, Error> {
     let mut file = match File::open(path.clone()) {
         Ok(file) => file,
-        Err(ref e) if e.kind() == io::ErrorKind::NotFound => Err(NoConfigError(path))?,
-        Err(e) => Err(e)?,
+        Err(ref e) if e.kind() == io::ErrorKind::NotFound => return Err(NoConfigError(path).into()),
+        Err(e) => return Err(e.into()),
     };
 
     let mut contents = String::new();
@@ -75,7 +75,7 @@ pub fn read(path: String) -> Result<Config, Error> {
 
     match toml::from_str(&contents) {
         Ok(config) => Ok(config),
-        Err(e) => Err(ParseError(e.to_string()))?,
+        Err(e) => Err(ParseError(e.to_string()).into()),
     }
 }
 
@@ -83,5 +83,5 @@ pub fn node<'a>(config: &'a Config, name: &str) -> Result<&'a Node, MissingNodeE
     Ok(config
         .nodes
         .get(name)
-        .ok_or(MissingNodeError(String::from(name)))?)
+        .ok_or_else(|| MissingNodeError(String::from(name)))?)
 }

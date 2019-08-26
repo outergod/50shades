@@ -124,6 +124,7 @@ pub mod lib {
     use serde_json::map::Map;
     use serde_json::Value;
     use std::collections::HashMap;
+    use std::hash::BuildHasher;
     use url::Url;
 
     #[derive(Serialize, Deserialize, Debug)]
@@ -166,12 +167,12 @@ pub mod lib {
             Ok(mut path) => {
                 path.extend(&["search", "universal", "absolute"]);
             }
-            Err(()) => Err(BaseUrlError)?,
+            Err(()) => return Err(BaseUrlError.into()),
         }
 
         Ok(Client::new()
             .get(url.as_str())
-            .basic_auth(node.user.clone(), Some(password.clone()))
+            .basic_auth(node.user.clone(), Some(password))
             .header(ACCEPT, "application/json"))
     }
 
@@ -201,25 +202,29 @@ pub mod lib {
 
         match response.status() {
             StatusCode::OK => Ok(serde_json::from_str(&body)?),
-            StatusCode::UNAUTHORIZED => Err(ResponseError::AuthenticationFailure)?,
+            StatusCode::UNAUTHORIZED => Err(ResponseError::AuthenticationFailure.into()),
             status => Err(ResponseError::Unexpected(
                 status,
                 serde_json::from_str(&body)
-                    .and_then(|e: ErrorResponse| Ok(String::from(e.message)))
-                    .unwrap_or(String::from("No details given")),
-            ))?,
+                    .and_then(|e: ErrorResponse| Ok(e.message))
+                    .unwrap_or_else(|_| String::from("No details given")),
+            )
+            .into()),
         }
     }
 
-    pub fn run_query(builder: &RequestBuilder, query: &HashMap<&str, String>) -> Result<(), Error> {
+    pub fn run_query<S: BuildHasher>(
+        builder: &RequestBuilder,
+        query: &HashMap<&str, String, S>,
+    ) -> Result<(), Error> {
         let tuples: Vec<(&&str, &String)> = query.iter().collect();
         let client = builder.try_clone().unwrap().query(&tuples);
         handle_response(search(client)?);
         Ok(())
     }
 
-    pub fn assign_query(query: &Vec<String>, params: &mut HashMap<&str, String>) {
-        if query.len() > 0 {
+    pub fn assign_query<S: BuildHasher>(query: &[String], params: &mut HashMap<&str, String, S>) {
+        if !query.is_empty() {
             params.insert("query", query.join(" "));
         } else {
             params.insert("query", String::from("*"));
