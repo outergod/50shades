@@ -26,19 +26,18 @@ pub fn run(
     name: String,
     from: String,
     to: String,
-    limit: Option<u64>,
     query: Vec<String>,
 ) -> Result<(), Error> {
+    let from = lib::parse_timestamp(&from)?.0;
+    let to = lib::parse_timestamp(&to)?.1;
+
     let node = config::node(&config, &name)?;
     let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
 
     let mut params = HashMap::new();
     lib::assign_query(&query, &mut params);
 
-    if let Some(limit) = limit {
-        params.insert("limit", limit.to_string());
-    }
-
+    params.insert("limit", "0".into());
     params.insert("from", from);
     params.insert("to", to);
 

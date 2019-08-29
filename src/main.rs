@@ -42,14 +42,11 @@ enum Command {
     /// Performs one-time query against Graylog
     #[structopt(name = "query")]
     Query {
-        #[structopt(long = "search-from", short = "@")]
+        #[structopt(long = "search-from", short = "@", default_value = "2 minutes ago")]
         from: String,
 
-        #[structopt(long = "search-to", short = "#")]
+        #[structopt(long = "search-to", short = "#", default_value = "now")]
         to: String,
-
-        #[structopt(long, short)]
-        limit: Option<u64>,
 
         #[structopt(name = "QUERY")]
         query: Vec<String>,
@@ -58,8 +55,8 @@ enum Command {
     /// Follows the tail of a query (like tail -f on a log file)
     #[structopt(name = "follow")]
     Follow {
-        #[structopt(long = "search-from", short = "@")]
-        from: Option<String>,
+        #[structopt(long = "search-from", short = "@", default_value = "10 seconds ago")]
+        from: String,
 
         #[structopt(long, default_value = "2")]
         latency: i64,
@@ -101,12 +98,9 @@ fn main() -> Result<(), ExitFailure> {
             query,
         } => command::follow::run(config, cli.node, from, latency, poll, query)?,
 
-        Command::Query {
-            from,
-            to,
-            limit,
-            query,
-        } => command::query::run(config, cli.node, from, to, limit, query)?,
+        Command::Query { from, to, query } => {
+            command::query::run(config, cli.node, from, to, query)?
+        }
     }
 
     Ok(())
@@ -115,6 +109,7 @@ fn main() -> Result<(), ExitFailure> {
 pub mod lib {
     use crate::config;
     use chrono::prelude::*;
+    use chrono::{Local, TimeZone, Utc};
     use failure::{Error, Fail};
     use reqwest;
     use reqwest::header::ACCEPT;
@@ -125,6 +120,7 @@ pub mod lib {
     use serde_json::Value;
     use std::collections::HashMap;
     use std::hash::BuildHasher;
+    use two_timer;
     use url::Url;
 
     #[derive(Serialize, Deserialize, Debug)]
@@ -160,6 +156,17 @@ pub mod lib {
     #[fail(display = "Not a valid base URL")]
     struct BaseUrlError;
 
+    #[derive(Debug, Fail)]
+    #[fail(display = "Could not interpret timestamp {}: {}", timestamp, message)]
+    pub struct DateParseError {
+        timestamp: String,
+        message: String,
+    }
+
+    #[derive(Debug, Fail)]
+    #[fail(display = "Could not determine local timezone")]
+    pub struct LocalTimeZoneError;
+
     pub fn node_client(node: &config::Node, password: &str) -> Result<RequestBuilder, Error> {
         let mut url = Url::parse(&node.url)?;
 
@@ -177,7 +184,8 @@ pub mod lib {
     }
 
     fn handle_response(response: SearchResponse) {
-        if let Some(messages) = response.messages {
+        if let Some(mut messages) = response.messages {
+            messages.reverse();
             for message in messages.iter() {
                 if let Some(Value::Object(m)) = message.get("message") {
                     println!(
@@ -228,6 +236,31 @@ pub mod lib {
             params.insert("query", query.join(" "));
         } else {
             params.insert("query", String::from("*"));
+        }
+    }
+
+    fn convert_datetime(datetime: NaiveDateTime) -> Result<String, LocalTimeZoneError> {
+        match Local::now()
+            .timezone()
+            .from_local_datetime(&datetime)
+            .single()
+        {
+            None => Err(LocalTimeZoneError),
+            Some(t) => Ok(t
+                .with_timezone(&Utc)
+                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                .to_string()),
+        }
+    }
+
+    pub fn parse_timestamp(timestamp: &str) -> Result<(String, String), Error> {
+        match two_timer::parse(timestamp, None) {
+            Ok((from, to, _)) => Ok((convert_datetime(from)?, convert_datetime(to)?)),
+            Err(e) => Err(DateParseError {
+                timestamp: timestamp.into(),
+                message: e.msg().into(),
+            }
+            .into()),
         }
     }
 }

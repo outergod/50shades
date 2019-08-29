@@ -27,7 +27,7 @@ use std::{thread, time};
 pub fn run(
     config: Config,
     name: String,
-    from: Option<String>,
+    from: String,
     latency: i64,
     poll: u64,
     query: Vec<String>,
@@ -36,11 +36,7 @@ pub fn run(
     let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
 
     let mut params = HashMap::new();
-    let mut _from = from.unwrap_or_else(|| {
-        Utc::now()
-            .sub(chrono::Duration::seconds(latency))
-            .to_rfc3339_opts(SecondsFormat::Millis, true)
-    });
+    let mut from = lib::parse_timestamp(&from)?.0;
     let sleep = time::Duration::from_millis(poll);
     lib::assign_query(&query, &mut params);
 
@@ -49,12 +45,13 @@ pub fn run(
             .sub(chrono::Duration::seconds(latency))
             .to_rfc3339_opts(SecondsFormat::Millis, true);
 
-        params.insert("from", _from);
+        params.insert("limit", "0".into());
+        params.insert("from", from);
         params.insert("to", String::from(now));
 
         lib::run_query(&builder, &params)?;
 
-        _from = String::from(now);
+        from = String::from(now);
         thread::sleep(sleep);
     }
 }

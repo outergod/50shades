@@ -14,10 +14,11 @@ serde = { version = "1.0.98", features = ["derive"] }
 toml = "0.5"
 serde_json = "1.0"
 url = "2.1.0"
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4.1", features = ["serde"] }
 exitfailure = "0.5.1"
 rpassword = "4.0"
 dirs = "2.0.2"
+two_timer = "1.2.0"
 
 [[bin]]
 name = "50shades"
