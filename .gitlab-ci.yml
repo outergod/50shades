@@ -1,9 +1,27 @@
+variables:
+  DOCKER_HOST: tcp://docker:2375/
+
 image: communicatio/rust:1.37.0
 
 stages:
+  - prepare
   - build
 
+prepare:
+  stage: prepare
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:latest || true
+    - docker build --cache-from $IMAGE:latest --tag $IMAGE:latest .
+    - docker push $CI_REGISTRY_IMAGE:latest
+  tags:
+    - v2
+
 build-linux:
+  image: $CI_REGISTRY_IMAGE:latest
   stage: build
   script:
     - dnf install -y openssl-devel dbus-devel glibc-devel
@@ -14,8 +32,11 @@ build-linux:
       - target/debug/50shades
       - target/release/50shades
     expire_in: 1 week
+  tags:
+    - v2
 
 build-macos:
+  image: $CI_REGISTRY_IMAGE:latest
   stage: build
   variables:
     CC: o64-clang
@@ -28,3 +49,5 @@ build-macos:
       - target/x86_64-apple-darwin/debug/50shades
       - target/x86_64-apple-darwin/release/50shades
     expire_in: 1 week
+  tags:
+    - v2
