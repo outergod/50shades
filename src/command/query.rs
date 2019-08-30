@@ -22,17 +22,21 @@ use failure::Error;
 use std::collections::HashMap;
 
 pub fn run(
-    config: Config,
+    config: Result<Config, Error>,
     name: String,
     from: String,
     to: String,
     query: Vec<String>,
 ) -> Result<(), Error> {
+    let node = match config {
+        Ok(ref config) => config::node(config, &name)?,
+        Err(e) => return Err(e),
+    };
+
+    let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
+
     let from = lib::parse_timestamp(&from)?.0;
     let to = lib::parse_timestamp(&to)?.1;
-
-    let node = config::node(&config, &name)?;
-    let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
 
     let mut params = HashMap::new();
     lib::assign_query(&query, &mut params);

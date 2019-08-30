@@ -18,10 +18,12 @@ use dirs;
 use failure::{Error, Fail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 use std::path::Path;
+use toml;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Node {
@@ -48,9 +50,9 @@ pub struct ConfigPathError;
 
 #[derive(Debug, Fail)]
 #[fail(display = "Could not find configuration file at {}", _0)]
-pub struct NoConfigError(String);
+pub struct NoConfigError(pub String);
 
-pub fn default() -> Result<String, ConfigPathError> {
+pub fn default() -> Result<String, Error> {
     Ok(dirs::config_dir()
         .and_then(|path| {
             Some(
@@ -84,4 +86,14 @@ pub fn node<'a>(config: &'a Config, name: &str) -> Result<&'a Node, MissingNodeE
         .nodes
         .get(name)
         .ok_or_else(|| MissingNodeError(String::from(name)))?)
+}
+
+pub fn write(path: &str, config: &Config) -> Result<(), Error> {
+    if let Some(parent) = Path::new(path).parent() {
+        fs::create_dir_all(&parent)?;
+    }
+
+    let mut file = File::create(path)?;
+    file.write_all(toml::to_string_pretty(config)?.as_bytes())?;
+    Ok(())
 }

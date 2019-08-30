@@ -19,7 +19,10 @@ use crate::config::Config;
 use crate::password;
 use failure::Error;
 
-pub fn run(config: Config, node: String) -> Result<(), Error> {
-    let config = config::node(&config, &node)?;
-    password::set(&node, &config.user)
+pub fn run(config: Result<Config, Error>, node: String) -> Result<(), Error> {
+    let config = match config {
+        Ok(ref config) => config::node(config, &node)?,
+        Err(e) => return Err(e),
+    };
+    password::prompt(&node, &config.user)
 }

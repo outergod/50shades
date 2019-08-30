@@ -53,17 +53,21 @@ pub fn get(node: &str, user: &str) -> Result<String, Error> {
     }
 }
 
-pub fn set(node: &str, user: &str) -> Result<(), Error> {
+pub fn set(node: &str, user: &str, password: &str) -> Result<(), Error> {
     let service = format!("50shades:{}", &node);
     let keyring = Keyring::new(&service, user);
-
-    let password = rpassword::read_password_from_tty(Some(&format!(
-        "Please provide the password for {} at {}: ",
-        user, &node
-    )))?;
 
     match keyring.set_password(&password) {
         Ok(_) => Ok(()),
         Err(e) => Err(PasswordStoreError(format!("{}", e)).into()),
     }
+}
+
+pub fn prompt(node: &str, user: &str) -> Result<(), Error> {
+    let password = rpassword::read_password_from_tty(Some(&format!(
+        "Please provide the password for {} at {}: ",
+        user, &node
+    )))?;
+
+    set(node, user, &password)
 }

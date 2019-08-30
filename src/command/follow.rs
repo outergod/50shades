@@ -25,14 +25,18 @@ use std::ops::Sub;
 use std::{thread, time};
 
 pub fn run(
-    config: Config,
+    config: Result<Config, Error>,
     name: String,
     from: String,
     latency: i64,
     poll: u64,
     query: Vec<String>,
 ) -> Result<(), Error> {
-    let node = config::node(&config, &name)?;
+    let node = match config {
+        Ok(ref config) => config::node(config, &name)?,
+        Err(e) => return Err(e),
+    };
+
     let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
 
     let mut params = HashMap::new();

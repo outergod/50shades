@@ -35,6 +35,10 @@ struct Cli {
 
 #[derive(Debug, StructOpt)]
 enum Command {
+    /// Initializes the default configuration file
+    #[structopt(name = "init")]
+    Init {},
+
     /// Stores new password for specified node
     #[structopt(name = "login")]
     Login {},
@@ -74,6 +78,7 @@ pub mod password;
 
 mod command {
     pub mod follow;
+    pub mod init;
     pub mod login;
     pub mod query;
 }
@@ -81,14 +86,22 @@ mod command {
 fn main() -> Result<(), ExitFailure> {
     let cli = Cli::from_args();
 
-    let path = match cli.config {
-        None => config::default()?,
-        Some(path) => path,
-    };
+    // let path = match cli.config {
+    //     None => config::default()?,
+    //     Some(path) => path,
+    // };
 
-    let config = config::read(path)?;
+    // let config = config::read(path)?;
+
+    let config = match cli.config {
+        None => config::default(),
+        Some(path) => Ok(path),
+    }
+    .and_then(|path| config::read(path));
 
     match cli.command {
+        Command::Init {} => command::init::run(config, cli.node)?,
+
         Command::Login {} => command::login::run(config, cli.node)?,
 
         Command::Follow {
