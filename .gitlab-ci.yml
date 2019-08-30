@@ -1,8 +1,6 @@
 variables:
   DOCKER_HOST: tcp://docker:2375/
 
-image: communicatio/rust:1.37.0
-
 stages:
   - prepare
   - build
