@@ -14,9 +14,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use dialoguer::PasswordInput;
 use failure::{Error, Fail};
 use keyring::{Keyring, KeyringError};
-use rpassword;
 use std::fmt;
 
 #[derive(Debug, Fail)]
@@ -64,10 +64,12 @@ pub fn set(node: &str, user: &str, password: &str) -> Result<(), Error> {
 }
 
 pub fn prompt(node: &str, user: &str) -> Result<(), Error> {
-    let password = rpassword::read_password_from_tty(Some(&format!(
-        "Please provide the password for {} at {}: ",
-        user, &node
-    )))?;
+    let password = PasswordInput::new()
+        .with_prompt(&format!(
+            "Please provide the password for {} at {}",
+            user, &node
+        ))
+        .interact()?;
 
     set(node, user, &password)
 }
