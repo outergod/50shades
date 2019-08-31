@@ -82,6 +82,8 @@ Graylog's API endpoint is usually exposed as /api, e.g. https://graylog.example.
         )]
         .into_iter()
         .collect(),
+
+        templates: config::Templates::default(),
     };
 
     println!("Storing configuration...");

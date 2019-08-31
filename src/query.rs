@@ -1,0 +1,131 @@
+// This file is part of 50shades.
+//
+// Copyright 2019 Communicatio.Systems GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use crate::config;
+use crate::template;
+use chrono::prelude::*;
+use chrono::Utc;
+use failure::{Error, Fail};
+use handlebars::Handlebars;
+use reqwest;
+use reqwest::header::ACCEPT;
+use reqwest::Client;
+use reqwest::{RequestBuilder, StatusCode};
+use serde::{Deserialize, Serialize};
+use serde_json::map::Map;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::hash::BuildHasher;
+use url::Url;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct SearchResponse {
+    from: Option<DateTime<Utc>>,
+    to: Option<DateTime<Utc>>,
+    messages: Option<Vec<Map<String, Value>>>,
+    fields: Option<Vec<String>>,
+    time: Option<u64>,
+    built_query: Option<String>,
+    used_indices: Option<Vec<Map<String, Value>>>,
+    total_results: Option<u64>,
+    decoration_stats: Option<Map<String, Value>>,
+    query: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ErrorResponse {
+    r#type: String,
+    message: String,
+}
+
+#[derive(Debug, Fail)]
+enum ResponseError {
+    #[fail(display = "Authentication failed")]
+    AuthenticationFailure,
+
+    #[fail(display = "{}: {}", _0, _1)]
+    Unexpected(StatusCode, String),
+}
+
+#[derive(Debug, Fail)]
+#[fail(display = "Not a valid base URL")]
+struct BaseUrlError;
+
+pub fn node_client(node: &config::Node, password: &str) -> Result<RequestBuilder, Error> {
+    let mut url = Url::parse(&node.url)?;
+
+    match url.path_segments_mut() {
+        Ok(mut path) => {
+            path.extend(&["search", "universal", "absolute"]);
+        }
+        Err(()) => return Err(BaseUrlError.into()),
+    }
+
+    Ok(Client::new()
+        .get(url.as_str())
+        .basic_auth(node.user.clone(), Some(password))
+        .header(ACCEPT, "application/json"))
+}
+
+fn handle_response(response: SearchResponse, handlebars: &Handlebars) {
+    if let Some(mut messages) = response.messages {
+        messages.reverse();
+        for message in messages.iter() {
+            if let Some(Value::Object(m)) = message.get("message") {
+                match template::render(handlebars, &m) {
+                    Ok(s) => println!("{}", &s),
+                    Err(e) => eprintln!("Could not format line: {:?}", e),
+                }
+            }
+        }
+    }
+}
+
+fn search(client: RequestBuilder) -> Result<SearchResponse, Error> {
+    let mut response = client.send()?;
+    let body = response.text()?;
+
+    match response.status() {
+        StatusCode::OK => Ok(serde_json::from_str(&body)?),
+        StatusCode::UNAUTHORIZED => Err(ResponseError::AuthenticationFailure.into()),
+        status => Err(ResponseError::Unexpected(
+            status,
+            serde_json::from_str(&body)
+                .and_then(|e: ErrorResponse| Ok(e.message))
+                .unwrap_or_else(|_| String::from("No details given")),
+        )
+        .into()),
+    }
+}
+
+pub fn run<S: BuildHasher>(
+    builder: &RequestBuilder,
+    query: &HashMap<&str, String, S>,
+    handlebars: &Handlebars,
+) -> Result<(), Error> {
+    let tuples: Vec<(&&str, &String)> = query.iter().collect();
+    let client = builder.try_clone().unwrap().query(&tuples);
+    handle_response(search(client)?, handlebars);
+    Ok(())
+}
+
+pub fn assign<S: BuildHasher>(query: &[String], params: &mut HashMap<&str, String, S>) {
+    if !query.is_empty() {
+        params.insert("query", query.join(" "));
+    } else {
+        params.insert("query", String::from("*"));
+    }
+}

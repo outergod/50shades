@@ -16,36 +16,43 @@
 
 use crate::config;
 use crate::config::Config;
-use crate::lib;
+use crate::datetime;
 use crate::password;
+use crate::query;
+use crate::template;
 use failure::Error;
 use std::collections::HashMap;
 
 pub fn run(
     config: Result<Config, Error>,
-    name: String,
+    node_name: String,
+    template: String,
     from: String,
     to: String,
     query: Vec<String>,
 ) -> Result<(), Error> {
-    let node = match config {
-        Ok(ref config) => config::node(config, &name)?,
+    let (node, template) = match config {
+        Ok(ref config) => (
+            config::node(config, &node_name)?,
+            config::template(config, &template)?,
+        ),
         Err(e) => return Err(e),
     };
 
-    let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
+    let handlebars = template::compile(&template)?;
+    let builder = query::node_client(&node, &password::get(&node_name, &node.user)?)?;
 
-    let from = lib::parse_timestamp(&from)?.0;
-    let to = lib::parse_timestamp(&to)?.1;
+    let from = datetime::parse_timestamp(&from)?.0;
+    let to = datetime::parse_timestamp(&to)?.1;
 
     let mut params = HashMap::new();
-    lib::assign_query(&query, &mut params);
+    query::assign(&query, &mut params);
 
     params.insert("limit", "0".into());
     params.insert("from", from);
     params.insert("to", to);
 
-    lib::run_query(&builder, &params)?;
+    query::run(&builder, &params, &handlebars)?;
 
     Ok(())
 }

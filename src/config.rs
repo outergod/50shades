@@ -18,12 +18,16 @@ use dirs;
 use failure::{Error, Fail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::default::Default;
 use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
+use std::ops::Deref;
 use std::path::Path;
 use toml;
+
+const DEFAULT_TEMPLATE: &str = r#"[{{default container_name "-"}}] {{message}}"#;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Node {
@@ -32,8 +36,29 @@ pub struct Node {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct Templates(HashMap<String, String>);
+
+impl Default for Templates {
+    fn default() -> Self {
+        let mut hm = HashMap::<String, String>::new();
+        hm.insert("default".to_owned(), DEFAULT_TEMPLATE.to_owned());
+        Self(hm)
+    }
+}
+
+impl Deref for Templates {
+    type Target = HashMap<String, String>;
+
+    fn deref(&self) -> &HashMap<String, String> {
+        &self.0
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub nodes: HashMap<String, Node>,
+    #[serde(default)]
+    pub templates: Templates,
 }
 
 #[derive(Debug, Fail)]
@@ -43,6 +68,10 @@ struct ParseError(String);
 #[derive(Debug, Fail)]
 #[fail(display = "Node {} is not configured", _0)]
 pub struct MissingNodeError(String);
+
+#[derive(Debug, Fail)]
+#[fail(display = "Template {} is not configured", _0)]
+pub struct MissingTemplateError(String);
 
 #[derive(Debug, Fail)]
 #[fail(display = "Could not determine default configuration path")]
@@ -86,6 +115,13 @@ pub fn node<'a>(config: &'a Config, name: &str) -> Result<&'a Node, MissingNodeE
         .nodes
         .get(name)
         .ok_or_else(|| MissingNodeError(String::from(name)))?)
+}
+
+pub fn template<'a>(config: &'a Config, name: &str) -> Result<&'a str, MissingTemplateError> {
+    Ok(config
+        .templates
+        .get(name)
+        .ok_or_else(|| MissingTemplateError(String::from(name)))?)
 }
 
 pub fn write(path: &str, config: &Config) -> Result<(), Error> {

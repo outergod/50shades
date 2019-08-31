@@ -16,8 +16,10 @@
 
 use crate::config;
 use crate::config::Config;
-use crate::lib;
+use crate::datetime;
 use crate::password;
+use crate::query;
+use crate::template;
 use chrono::prelude::*;
 use failure::Error;
 use std::collections::HashMap;
@@ -26,23 +28,28 @@ use std::{thread, time};
 
 pub fn run(
     config: Result<Config, Error>,
-    name: String,
+    node_name: String,
+    template: String,
     from: String,
     latency: i64,
     poll: u64,
     query: Vec<String>,
 ) -> Result<(), Error> {
-    let node = match config {
-        Ok(ref config) => config::node(config, &name)?,
+    let (node, template) = match config {
+        Ok(ref config) => (
+            config::node(config, &node_name)?,
+            config::template(config, &template)?,
+        ),
         Err(e) => return Err(e),
     };
 
-    let builder = lib::node_client(&node, &password::get(&name, &node.user)?)?;
+    let handlebars = template::compile(&template)?;
+    let builder = query::node_client(&node, &password::get(&node_name, &node.user)?)?;
 
     let mut params = HashMap::new();
-    let mut from = lib::parse_timestamp(&from)?.0;
+    let mut from = datetime::parse_timestamp(&from)?.0;
     let sleep = time::Duration::from_millis(poll);
-    lib::assign_query(&query, &mut params);
+    query::assign(&query, &mut params);
 
     loop {
         let now = &Utc::now()
@@ -53,7 +60,7 @@ pub fn run(
         params.insert("from", from);
         params.insert("to", String::from(now));
 
-        lib::run_query(&builder, &params)?;
+        query::run(&builder, &params, &handlebars)?;
 
         from = String::from(now);
         thread::sleep(sleep);
