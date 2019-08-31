@@ -4,6 +4,15 @@ version = "0.1.0-beta.0"
 authors = ["Alexander Kahl <ak@communicatio.com>"]
 edition = "2018"
 license = "Apache-2.0"
+description = "Graylog REST API client written in Rust"
+homepage = "https://github.com/e-user/50shades"
+repository = "https://github.com/e-user/50shades"
+readme = "README.md"
+keywords = ["command-line", "cli", "graylog", "log"]
+categories = ["command-line-utilities"]
+
+[badges]
+maintenance = { status = "passively-maintained" }
 
 [dependencies]
 reqwest = "0.9.19"
