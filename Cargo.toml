@@ -1,5 +1,5 @@
 [package]
-name = "fifty_shades"
+name = "fifty-shades"
 version = "0.1.0-pre"
 authors = ["Alexander Kahl <ak@communicatio.com>"]
 edition = "2018"
