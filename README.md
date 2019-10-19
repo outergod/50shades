@@ -76,7 +76,7 @@ template referenced by the `--template`, or `-t`, option. 50shades' default
 template is specified as follows:
 
 ```
-[{{default container_name "-"}}] {{message}}
+[{{default container_name "-"}}] {{{message}}}
 ```
 
 50shades includes `default` as a custom [helper] which may be used to specify a
