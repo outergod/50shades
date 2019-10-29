@@ -15,9 +15,9 @@
 // limitations under the License.
 
 use crate::config;
-use crate::config::{Config, NoConfigError, Node};
+use crate::config::{Config, ElasticNode, GraylogNode, NoConfigError, Node};
 use crate::password;
-use dialoguer::{Input, PasswordInput};
+use dialoguer::{Input, PasswordInput, Select};
 use failure::{Error, Fail};
 use url::Url;
 
@@ -25,13 +25,12 @@ use url::Url;
 #[fail(display = "Config file does already exist. Not overwriting.")]
 struct ConfigFileExistsError;
 
-fn prompt(path: &str, node: &str) -> Result<(), Error> {
+fn prompt_graylog(node: &str) -> Node {
     println!(
-        "We'll set up a new configuration file at {}.
-Please enter the Graylog connection details for the node {}.
+        "Please enter the Graylog connection details for the node {}.
 Graylog's API endpoint is usually exposed as /api, e.g. https://graylog.example.com/api.
 ",
-        path, node
+        node
     );
 
     let url: Url;
@@ -60,36 +59,121 @@ Graylog's API endpoint is usually exposed as /api, e.g. https://graylog.example.
         }
     }
 
-    let password: String;
+    Node::Graylog(GraylogNode {
+        user,
+        url: url.to_string(),
+    })
+}
 
+fn prompt_elastic(node: &str) -> Node {
+    println!(
+        "Please enter the Elasticsearch connection details for the node {}.",
+        node
+    );
+
+    let url: Url;
+
+    loop {
+        if let Ok(s) = Input::<String>::new()
+            .with_prompt("Elasticsearch URL")
+            .interact()
+        {
+            match Url::parse(&s) {
+                Ok(u) => {
+                    url = u;
+                    break;
+                }
+                Err(_) => println!("Not a valid URL."),
+            }
+        }
+    }
+
+    let user: Option<String>;
+
+    loop {
+        if let Ok(s) = Input::<String>::new()
+            .with_prompt("Username (leave empty for no authentication)")
+            .interact()
+        {
+            user = if !s.is_empty() { Some(s) } else { None };
+            break;
+        }
+    }
+
+    Node::Elastic(ElasticNode {
+        user,
+        url: url.to_string(),
+    })
+}
+
+struct UserPass {
+    user: String,
+    password: String,
+}
+
+fn prompt_password() -> String {
     loop {
         if let Ok(s) = PasswordInput::new()
             .with_prompt("Password (not echoed)")
             .interact()
         {
-            password = s;
+            return s;
+        }
+    }
+}
+
+fn prompt(path: &str, node_name: &str) -> Result<(), Error> {
+    println!("We'll set up a new configuration file at {}.", path);
+
+    let node: Node;
+
+    let selections = &["Graylog", "Elasticsearch"];
+
+    loop {
+        if let Ok(n) = Select::new()
+            .with_prompt("Please select which node type you'd like to set up")
+            .default(0)
+            .items(&selections[..])
+            .interact()
+        {
+            match selections[n] {
+                "Graylog" => node = prompt_graylog(node_name),
+                "Elasticsearch" => node = prompt_elastic(node_name),
+                &_ => panic!(),
+            }
+
             break;
         }
     }
 
-    let config = Config {
-        nodes: vec![(
-            node.to_owned(),
-            Node {
-                url: url.into_string(),
-                user: user.clone(),
-            },
-        )]
-        .into_iter()
-        .collect(),
+    let user_pass = match node {
+        Node::Graylog(GraylogNode { ref user, .. }) => Some(UserPass {
+            user: user.clone(),
+            password: prompt_password(),
+        }),
+        Node::Elastic(ElasticNode {
+            user: Some(ref user),
+            ..
+        }) => Some(UserPass {
+            user: user.clone(),
+            password: prompt_password(),
+        }),
+        Node::Elastic(ElasticNode { user: None, .. }) => None,
+    };
 
+    let config = Config {
+        nodes: vec![(node_name.to_owned(), node)].into_iter().collect(),
         templates: config::Templates::default(),
     };
 
     println!("Storing configuration...");
     config::write(&path, &config)?;
-    println!("Storing password in your keyring...");
-    password::set(node, &user, &password)?;
+
+    if let Some(UserPass { user, password }) = user_pass {
+        println!("Storing password in your keyring...");
+        password::set(node_name, &user, &password)?;
+    }
+
     println!("Done. You should now be able to use 50shades. 
 Please edit {} to add more nodes and invoke 50shades with the `login` command to store the corresponding passwords.", &path);
 
