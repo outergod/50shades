@@ -17,7 +17,6 @@
 use crate::config;
 use crate::config::{Config, ElasticNode, GraylogNode, Node};
 use crate::datetime;
-use crate::password;
 use crate::query::{elastic, graylog};
 use crate::template;
 use chrono::prelude::*;
@@ -37,7 +36,7 @@ fn follow_graylog(
     poll: u64,
     query: &[String],
 ) -> Result<(), Error> {
-    let client = graylog::node_client(&node, &password::get(&node_name, &node.user)?)?;
+    let client = graylog::node_client(&node, node_name)?;
 
     let mut params = HashMap::new();
     let mut from = datetime::parse_timestamp(&from)?.0;

@@ -17,7 +17,6 @@
 use crate::config;
 use crate::config::{Config, ElasticNode, GraylogNode, Node};
 use crate::datetime;
-use crate::password;
 use crate::query::{elastic, graylog};
 use crate::template;
 use failure::Error;
@@ -33,8 +32,7 @@ fn query_graylog(
     to: &str,
     query: &[String],
 ) -> Result<(), Error> {
-    let password = password::get(&node_name, &node.user)?;
-    let client = graylog::node_client(node, &password)?;
+    let client = graylog::node_client(node, node_name)?;
 
     let from = datetime::parse_timestamp(&from)?.0;
     let to = datetime::parse_timestamp(&to)?.1;
@@ -91,8 +89,6 @@ fn query_elastic(
             range
         },
     };
-
-    println!("{}", serde_json::to_string(&request).unwrap());
 
     elastic::run(&client, &request, &handlebars)?;
     Ok(())
