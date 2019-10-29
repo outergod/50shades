@@ -14,16 +14,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config;
+use super::{search, BaseUrlError, ResponseError};
+use crate::config::GraylogNode;
+use crate::password;
 use crate::template;
 use chrono::prelude::*;
 use chrono::Utc;
-use failure::{Error, Fail};
+use failure::Error;
 use handlebars::Handlebars;
 use reqwest;
 use reqwest::header::ACCEPT;
 use reqwest::Client;
-use reqwest::{RequestBuilder, StatusCode};
+use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::map::Map;
 use serde_json::Value;
@@ -32,7 +34,7 @@ use std::hash::BuildHasher;
 use url::Url;
 
 #[derive(Serialize, Deserialize, Debug)]
-struct SearchResponse {
+struct Response {
     from: Option<DateTime<Utc>>,
     to: Option<DateTime<Utc>>,
     messages: Option<Vec<Map<String, Value>>>,
@@ -51,20 +53,7 @@ struct ErrorResponse {
     message: String,
 }
 
-#[derive(Debug, Fail)]
-enum ResponseError {
-    #[fail(display = "Authentication failed")]
-    AuthenticationFailure,
-
-    #[fail(display = "{}: {}", _0, _1)]
-    Unexpected(StatusCode, String),
-}
-
-#[derive(Debug, Fail)]
-#[fail(display = "Not a valid base URL")]
-struct BaseUrlError;
-
-pub fn node_client(node: &config::Node, password: &str) -> Result<RequestBuilder, Error> {
+pub fn node_client(node: &GraylogNode, name: &str) -> Result<RequestBuilder, Error> {
     let mut url = Url::parse(&node.url)?;
 
     match url.path_segments_mut() {
@@ -74,13 +63,15 @@ pub fn node_client(node: &config::Node, password: &str) -> Result<RequestBuilder
         Err(()) => return Err(BaseUrlError.into()),
     }
 
+    let password = password::get(name, &node.user)?;
+
     Ok(Client::new()
         .get(url.as_str())
         .basic_auth(node.user.clone(), Some(password))
         .header(ACCEPT, "application/json"))
 }
 
-fn handle_response(response: SearchResponse, handlebars: &Handlebars) {
+fn handle_response(response: Response, handlebars: &Handlebars) {
     if let Some(mut messages) = response.messages {
         messages.reverse();
         for message in messages.iter() {
@@ -94,35 +85,31 @@ fn handle_response(response: SearchResponse, handlebars: &Handlebars) {
     }
 }
 
-fn search(client: RequestBuilder) -> Result<SearchResponse, Error> {
-    let mut response = client.send()?;
-    let body = response.text()?;
-
-    match response.status() {
-        StatusCode::OK => Ok(serde_json::from_str(&body)?),
-        StatusCode::UNAUTHORIZED => Err(ResponseError::AuthenticationFailure.into()),
-        status => Err(ResponseError::Unexpected(
-            status,
-            serde_json::from_str(&body)
-                .and_then(|e: ErrorResponse| Ok(e.message))
-                .unwrap_or_else(|_| String::from("No details given")),
-        )
-        .into()),
-    }
-}
-
 pub fn run<S: BuildHasher>(
-    builder: &RequestBuilder,
+    client: &RequestBuilder,
     query: &HashMap<&str, String, S>,
     handlebars: &Handlebars,
 ) -> Result<(), Error> {
     let tuples: Vec<(&&str, &String)> = query.iter().collect();
-    let client = builder.try_clone().unwrap().query(&tuples);
-    handle_response(search(client)?, handlebars);
+    let client = client.try_clone().unwrap().query(&tuples);
+    let response = match search::<Response>(client) {
+        Ok(response) => response,
+        Err(ResponseError::UnexpectedStatus(status, reason)) => {
+            return Err(ResponseError::UnexpectedStatus(
+                status,
+                serde_json::from_str(&reason)
+                    .and_then(|e: ErrorResponse| Ok(e.message))
+                    .unwrap_or_else(|_| String::from("No details given")),
+            )
+            .into())
+        }
+        Err(e) => return Err(e.into()),
+    };
+    handle_response(response, handlebars);
     Ok(())
 }
 
-pub fn assign<S: BuildHasher>(query: &[String], params: &mut HashMap<&str, String, S>) {
+pub fn assign_query<S: BuildHasher>(query: &[String], params: &mut HashMap<&str, String, S>) {
     if !query.is_empty() {
         params.insert("query", query.join(" "));
     } else {

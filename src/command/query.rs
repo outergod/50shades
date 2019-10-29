@@ -15,13 +15,88 @@
 // limitations under the License.
 
 use crate::config;
-use crate::config::Config;
+use crate::config::{Config, ElasticNode, GraylogNode, Node};
 use crate::datetime;
 use crate::password;
-use crate::query;
+use crate::query::{elastic, graylog};
 use crate::template;
 use failure::Error;
+use handlebars::Handlebars;
+use maplit::hashmap;
 use std::collections::HashMap;
+
+fn query_graylog(
+    node: &GraylogNode,
+    node_name: &str,
+    handlebars: &Handlebars,
+    from: &str,
+    to: &str,
+    query: &[String],
+) -> Result<(), Error> {
+    let password = password::get(&node_name, &node.user)?;
+    let client = graylog::node_client(node, &password)?;
+
+    let from = datetime::parse_timestamp(&from)?.0;
+    let to = datetime::parse_timestamp(&to)?.1;
+
+    let mut params = HashMap::new();
+    graylog::assign_query(&query, &mut params);
+
+    params.insert("limit", "0".into());
+    params.insert("from", from);
+    params.insert("to", to);
+
+    graylog::run(&client, &params, &handlebars)?;
+
+    Ok(())
+}
+
+fn query_elastic(
+    node: &ElasticNode,
+    node_name: &str,
+    handlebars: &Handlebars,
+    from: &str,
+    to: &str,
+    query: &[String],
+) -> Result<(), Error> {
+    let client = elastic::node_client(node, &node_name)?;
+
+    let from = datetime::parse_timestamp(&from)?.0;
+    let to = datetime::parse_timestamp(&to)?.1;
+
+    let range = elastic::Query::Range(hashmap! {
+        "@timestamp".to_owned() => elastic::Range {
+            gte: Some(from),
+            lt: Some(to),
+            ..Default::default()
+        }
+    });
+
+    let request = elastic::Request {
+        size: Some(10000),
+        sort: hashmap! {
+            "@timestamp".to_owned() => "asc".to_owned()
+        },
+        query: if !query.is_empty() {
+            elastic::Query::Bool(elastic::QueryBool {
+                must: Some(vec![
+                    Box::new(elastic::Query::QueryString {
+                        query: query.join(" "),
+                    }),
+                    Box::new(range),
+                ]),
+                ..Default::default()
+            })
+        } else {
+            range
+        },
+    };
+
+    println!("{}", serde_json::to_string(&request).unwrap());
+
+    elastic::run(&client, &request, &handlebars)?;
+    Ok(())
+}
 
 pub fn run(
     config: Result<Config, Error>,
@@ -40,19 +115,9 @@ pub fn run(
     };
 
     let handlebars = template::compile(&template)?;
-    let builder = query::node_client(&node, &password::get(&node_name, &node.user)?)?;
 
-    let from = datetime::parse_timestamp(&from)?.0;
-    let to = datetime::parse_timestamp(&to)?.1;
-
-    let mut params = HashMap::new();
-    query::assign(&query, &mut params);
-
-    params.insert("limit", "0".into());
-    params.insert("from", from);
-    params.insert("to", to);
-
-    query::run(&builder, &params, &handlebars)?;
-
-    Ok(())
+    match node {
+        Node::Graylog(node) => query_graylog(node, &node_name, &handlebars, &from, &to, &query),
+        Node::Elastic(node) => query_elastic(node, &node_name, &handlebars, &from, &to, &query),
+    }
 }
