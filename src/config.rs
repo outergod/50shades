@@ -27,12 +27,25 @@ use std::ops::Deref;
 use std::path::Path;
 use toml;
 
-const DEFAULT_TEMPLATE: &str = r#"[{{default container_name "-"}}] {{message}}"#;
+const DEFAULT_TEMPLATE: &str = r#"[{{default container_name "-"}}] {{{message}}}"#;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Node {
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum Node {
+    Graylog(GraylogNode),
+    Elastic(ElasticNode),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GraylogNode {
     pub url: String,
     pub user: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ElasticNode {
+    pub url: String,
+    pub user: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -80,6 +93,10 @@ pub struct ConfigPathError;
 #[derive(Debug, Fail)]
 #[fail(display = "Could not find configuration file at {}", _0)]
 pub struct NoConfigError(pub String);
+
+#[derive(Debug, Fail)]
+#[fail(display = "Unsupported node type: {}", _0)]
+pub struct NodeTypeError(pub String);
 
 pub fn default() -> Result<String, Error> {
     Ok(dirs::config_dir()

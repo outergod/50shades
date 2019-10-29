@@ -4,15 +4,17 @@
 [![License](https://img.shields.io/crates/l/fifty-shades)](https://www.apache.org/licenses/LICENSE-2.0)
 [![CI Status](https://img.shields.io/gitlab/pipeline/cmmc-systems/50shades?gitlab_url=https%3A%2F%2Fgitlab.communicatio.com)](https://gitlab.communicatio.com/cmmc-systems/50shades/pipelines)
 
-[Graylog] REST API client written in Rust.
+Log trail and query client written in Rust.
 
-50shades interfaces with Graylog's query API so that log message lookups can be
-performed from the command line. It supports storing logins in native OS
-keychains and following up on queries, so that logs can be viewed in a `tail -f`
-or `journalctl -f` manner. 50shades unterstands intuitive English expressions
-for timespans. Output can be controlled using [Handlebars] syntax.
+50shades interfaces with [Graylog]'s and [Elasticsearch]'s query APIs so that
+log message lookups can be performed from the command line. It supports storing
+logins in native OS keychains and following up on queries, so that logs can be
+viewed in a `tail -f` or `journalctl -f` manner. 50shades unterstands intuitive
+English expressions for timespans. Output can be controlled using [Handlebars]
+syntax.
 
 [Graylog]: https://www.graylog.org/
+[Elasticsearch]: https://www.elastic.co/products/elasticsearch
 [Handlebars]: https://handlebarsjs.com/
 
 ## Usage
@@ -41,7 +43,7 @@ SUBCOMMANDS:
     help      Prints this message or the help of the given subcommand(s)
     init      Initializes the configuration file
     login     Stores new password for specified node
-    query     Performs one-time query against Graylog
+    query     Performs one-time query
 ```
 
 Before any actual queries can be performed by either `query` or `follow`,
@@ -54,12 +56,46 @@ A valid configuration file looks like this:
 [nodes.default]
 url = 'https://graylog.example.com/api'
 user = 'admin'
+type = 'graylog'
+
+[nodes.elastic]
+url = 'https://elastic.example.com/'
+user = 'elastic'
+type = 'elastic'
+
+[nodes.logstash]
+url = 'https://elastic.example.com/logstash-*'
+user = 'elastic'
+type = 'elastic'
+
+[nodes.elastic-noauth]
+url = 'https://elastic.example.com/'
+type = 'elastic'
+
+[templates]
+default = '[{{default container_name "-"}}] {{{message}}}'
+rocket = '{{{method}}}{{{route}}} {{{uri}}}{{{status}}}'
 ```
 
-In addition, a matching password has to be stored for the node. This can be done
-by invoking 50shades with the `login` command.
+Here, 50shades invocations without a node specified would attempt to query the
+Graylog server API at `https://graylog.example.com/api` with the user
+`admin`. By specifying `-n elastic`, it would instead query the Elasticsearch
+server at `https://elastic.example.com/` for all indices and attempt to
+authenticate the user `elastic`. Specifying `-n logstash` would limit the same
+queries against indices starting in `logstash-`, whereas `-n elastic-noauth`
+would query all indices, but not attempt any authentication, which is a viable
+option for Elasticsearch, but not for Graylog.
+
+In addition, a matching password has to be stored for a node if a username is
+specified. This can be done by invoking 50shades with the `login` command while
+specifying the desired node using `-n` to store the password for.
+
+Any additional `query` or `follow` arguments after the options are passed down
+to Graylog or Elasticsearch as the actual query and use [Lucene query syntax],
+just like they do in the respective tools.
 
 [TOML]: https://github.com/toml-lang/toml
+[Lucene query syntax]: https://lucene.apache.org/core/2_9_4/queryparsersyntax.html
 
 ### Default Configuration File
 
@@ -76,7 +112,7 @@ template referenced by the `--template`, or `-t`, option. 50shades' default
 template is specified as follows:
 
 ```
-[{{default container_name "-"}}] {{message}}
+[{{default container_name "-"}}] {{{message}}}
 ```
 
 50shades includes `default` as a custom [helper] which may be used to specify a

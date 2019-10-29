@@ -15,14 +15,27 @@
 // limitations under the License.
 
 use crate::config;
-use crate::config::Config;
+use crate::config::{Config, ElasticNode, Node};
 use crate::password;
-use failure::Error;
+use failure::{Error, Fail};
+
+#[derive(Debug, Fail)]
+#[fail(display = "No username set for node")]
+struct NoUserError;
 
 pub fn run(config: Result<Config, Error>, node: String) -> Result<(), Error> {
     let config = match config {
         Ok(ref config) => config::node(config, &node)?,
         Err(e) => return Err(e),
     };
-    password::prompt(&node, &config.user)
+
+    let user = match config {
+        Node::Graylog(node) => &node.user,
+        Node::Elastic(ElasticNode {
+            user: Some(user), ..
+        }) => &user,
+        Node::Elastic(ElasticNode { user: None, .. }) => return Err(NoUserError.into()),
+    };
+
+    password::prompt(&node, user)
 }

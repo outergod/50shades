@@ -47,7 +47,7 @@ enum Command {
     #[structopt(name = "login")]
     Login {},
 
-    /// Performs one-time query against Graylog
+    /// Performs one-time query
     #[structopt(name = "query")]
     Query {
         #[structopt(long = "search-from", short = "@", default_value = "2 minutes ago")]
@@ -97,7 +97,7 @@ fn main() -> Result<(), ExitFailure> {
         None => config::default(),
         Some(path) => Ok(path),
     }
-    .and_then(|path| config::read(path));
+    .and_then(config::read);
 
     match cli.command {
         Command::Init {} => command::init::run(config, cli.node)?,

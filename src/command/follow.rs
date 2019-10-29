@@ -15,16 +15,103 @@
 // limitations under the License.
 
 use crate::config;
-use crate::config::Config;
+use crate::config::{Config, ElasticNode, GraylogNode, Node};
 use crate::datetime;
-use crate::password;
-use crate::query;
+use crate::query::{elastic, graylog};
 use crate::template;
 use chrono::prelude::*;
 use failure::Error;
+use handlebars::Handlebars;
+use maplit::hashmap;
 use std::collections::HashMap;
 use std::ops::Sub;
 use std::{thread, time};
+
+fn follow_graylog(
+    node: &GraylogNode,
+    node_name: &str,
+    handlebars: &Handlebars,
+    from: &str,
+    latency: i64,
+    poll: u64,
+    query: &[String],
+) -> Result<(), Error> {
+    let client = graylog::node_client(&node, node_name)?;
+
+    let mut params = HashMap::new();
+    let mut from = datetime::parse_timestamp(&from)?.0;
+    let sleep = time::Duration::from_millis(poll);
+    graylog::assign_query(&query, &mut params);
+
+    loop {
+        let now = &Utc::now()
+            .sub(chrono::Duration::seconds(latency))
+            .to_rfc3339_opts(SecondsFormat::Millis, true);
+
+        params.insert("limit", "0".into());
+        params.insert("from", from);
+        params.insert("to", String::from(now));
+
+        graylog::run(&client, &params, &handlebars)?;
+
+        from = String::from(now);
+        thread::sleep(sleep);
+    }
+}
+
+fn follow_elastic(
+    node: &ElasticNode,
+    node_name: &str,
+    handlebars: &Handlebars,
+    from: &str,
+    latency: i64,
+    poll: u64,
+    query: &[String],
+) -> Result<(), Error> {
+    let client = elastic::node_client(node, &node_name)?;
+
+    let mut from = datetime::parse_timestamp(&from)?.0;
+    let sleep = time::Duration::from_millis(poll);
+
+    loop {
+        let now = &Utc::now()
+            .sub(chrono::Duration::seconds(latency))
+            .to_rfc3339_opts(SecondsFormat::Millis, true);
+
+        let range = elastic::Query::Range(hashmap! {
+            "@timestamp".to_owned() => elastic::Range {
+                gte: Some(from),
+                lt: Some(now.to_string()),
+                ..Default::default()
+            }
+        });
+
+        let request = elastic::Request {
+            size: Some(10000),
+            sort: hashmap! {
+                "@timestamp".to_owned() => "asc".to_owned()
+            },
+            query: if !query.is_empty() {
+                elastic::Query::Bool(elastic::QueryBool {
+                    must: Some(vec![
+                        Box::new(elastic::Query::QueryString {
+                            query: query.join(" "),
+                        }),
+                        Box::new(range),
+                    ]),
+                    ..Default::default()
+                })
+            } else {
+                range
+            },
+        };
+
+        elastic::run(&client, &request, &handlebars)?;
+
+        from = String::from(now);
+        thread::sleep(sleep);
+    }
+}
 
 pub fn run(
     config: Result<Config, Error>,
@@ -44,25 +131,13 @@ pub fn run(
     };
 
     let handlebars = template::compile(&template)?;
-    let builder = query::node_client(&node, &password::get(&node_name, &node.user)?)?;
 
-    let mut params = HashMap::new();
-    let mut from = datetime::parse_timestamp(&from)?.0;
-    let sleep = time::Duration::from_millis(poll);
-    query::assign(&query, &mut params);
-
-    loop {
-        let now = &Utc::now()
-            .sub(chrono::Duration::seconds(latency))
-            .to_rfc3339_opts(SecondsFormat::Millis, true);
-
-        params.insert("limit", "0".into());
-        params.insert("from", from);
-        params.insert("to", String::from(now));
-
-        query::run(&builder, &params, &handlebars)?;
-
-        from = String::from(now);
-        thread::sleep(sleep);
+    match node {
+        Node::Graylog(node) => {
+            follow_graylog(node, &node_name, &handlebars, &from, latency, poll, &query)
+        }
+        Node::Elastic(node) => {
+            follow_elastic(node, &node_name, &handlebars, &from, latency, poll, &query)
+        }
     }
 }
