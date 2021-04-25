@@ -127,7 +127,7 @@ fn prompt(path: &str, node_name: &str) -> Result<(), Error> {
 
     let node: Node;
 
-    let selections = &["Graylog", "Elasticsearch"];
+    let selections = &["Graylog", "Elasticsearch", "Google"];
 
     loop {
         if let Ok(n) = Select::new()
@@ -139,6 +139,7 @@ fn prompt(path: &str, node_name: &str) -> Result<(), Error> {
             match selections[n] {
                 "Graylog" => node = prompt_graylog(node_name),
                 "Elasticsearch" => node = prompt_elastic(node_name),
+                "Google" => node = Node::Google,
                 &_ => panic!(),
             }
 
@@ -159,6 +160,7 @@ fn prompt(path: &str, node_name: &str) -> Result<(), Error> {
             password: prompt_password(),
         }),
         Node::Elastic(ElasticNode { user: None, .. }) => None,
+        Node::Google => None,
     };
 
     let config = Config {

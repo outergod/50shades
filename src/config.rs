@@ -34,6 +34,7 @@ const DEFAULT_TEMPLATE: &str = r#"[{{default container_name "-"}}] {{{message}}}
 pub enum Node {
     Graylog(GraylogNode),
     Elastic(ElasticNode),
+    Google,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

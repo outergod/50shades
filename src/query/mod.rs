@@ -15,11 +15,13 @@
 // limitations under the License.
 
 use failure::Fail;
-use reqwest::{RequestBuilder, StatusCode};
+use reqwest::blocking::RequestBuilder;
+use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 pub mod elastic;
+pub mod google;
 pub mod graylog;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -63,10 +65,11 @@ pub fn search<T>(client: RequestBuilder) -> Result<T, ResponseError>
 where
     T: DeserializeOwned,
 {
-    let mut response = client.send()?;
+    let response = client.send()?;
+    let status = response.status();
     let body = response.text()?;
 
-    match response.status() {
+    match status {
         StatusCode::OK => Ok(serde_json::from_str::<T>(&body)?),
         StatusCode::UNAUTHORIZED => Err(ResponseError::AuthenticationFailure),
         status => Err(ResponseError::UnexpectedStatus(status, body)),

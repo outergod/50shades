@@ -23,6 +23,10 @@ use failure::{Error, Fail};
 #[fail(display = "No username set for node")]
 struct NoUserError;
 
+#[derive(Debug, Fail)]
+#[fail(display = "No username required for node")]
+struct NoUserRequiredError;
+
 pub fn run(config: Result<Config, Error>, node: String) -> Result<(), Error> {
     let config = match config {
         Ok(ref config) => config::node(config, &node)?,
@@ -35,6 +39,7 @@ pub fn run(config: Result<Config, Error>, node: String) -> Result<(), Error> {
             user: Some(user), ..
         }) => &user,
         Node::Elastic(ElasticNode { user: None, .. }) => return Err(NoUserError.into()),
+        Node::Google => return Err(NoUserRequiredError.into()),
     };
 
     password::prompt(&node, user)

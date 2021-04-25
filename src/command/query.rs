@@ -17,7 +17,7 @@
 use crate::config;
 use crate::config::{Config, ElasticNode, GraylogNode, Node};
 use crate::datetime;
-use crate::query::{elastic, graylog};
+use crate::query::{elastic, google, graylog};
 use crate::template;
 use failure::Error;
 use handlebars::Handlebars;
@@ -115,5 +115,10 @@ pub fn run(
     match node {
         Node::Graylog(node) => query_graylog(node, &node_name, &handlebars, &from, &to, &query),
         Node::Elastic(node) => query_elastic(node, &node_name, &handlebars, &from, &to, &query),
+        Node::Google => {
+            let mut rt = tokio::runtime::Runtime::new().unwrap();
+            let future = google::run(&handlebars);
+            rt.block_on(future)
+        }
     }
 }
