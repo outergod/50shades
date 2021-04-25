@@ -23,9 +23,8 @@ use chrono::Utc;
 use failure::Error;
 use handlebars::Handlebars;
 use reqwest;
-use reqwest::blocking::Client;
-use reqwest::blocking::RequestBuilder;
 use reqwest::header::ACCEPT;
+use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::map::Map;
 use serde_json::Value;
@@ -85,14 +84,14 @@ fn handle_response(response: Response, handlebars: &Handlebars) {
     }
 }
 
-pub fn run<S: BuildHasher>(
+pub async fn run<S: BuildHasher>(
     client: &RequestBuilder,
     query: &HashMap<&str, String, S>,
     handlebars: &Handlebars,
 ) -> Result<(), Error> {
     let tuples: Vec<(&&str, &String)> = query.iter().collect();
     let client = client.try_clone().unwrap().query(&tuples);
-    let response = match search::<Response>(client) {
+    let response = match search::<Response>(client).await {
         Ok(response) => response,
         Err(ResponseError::UnexpectedStatus(status, reason)) => {
             return Err(ResponseError::UnexpectedStatus(

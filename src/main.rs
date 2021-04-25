@@ -90,7 +90,8 @@ mod command {
     pub mod query;
 }
 
-fn main() -> Result<(), ExitFailure> {
+#[tokio::main]
+async fn main() -> Result<(), ExitFailure> {
     let cli = Cli::from_args();
 
     let config = match cli.config {
@@ -109,10 +110,12 @@ fn main() -> Result<(), ExitFailure> {
             latency,
             poll,
             query,
-        } => command::follow::run(config, cli.node, cli.template, from, latency, poll, query)?,
+        } => {
+            command::follow::run(config, cli.node, cli.template, from, latency, poll, query).await?
+        }
 
         Command::Query { from, to, query } => {
-            command::query::run(config, cli.node, cli.template, from, to, query)?
+            command::query::run(config, cli.node, cli.template, from, to, query).await?
         }
     }
 

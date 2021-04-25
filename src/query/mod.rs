@@ -15,7 +15,7 @@
 // limitations under the License.
 
 use failure::Fail;
-use reqwest::blocking::RequestBuilder;
+use reqwest::RequestBuilder;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -61,13 +61,13 @@ impl From<serde_json::Error> for ResponseError {
 #[fail(display = "Not a valid base URL")]
 pub struct BaseUrlError;
 
-pub fn search<T>(client: RequestBuilder) -> Result<T, ResponseError>
+pub async fn search<T>(client: RequestBuilder) -> Result<T, ResponseError>
 where
     T: DeserializeOwned,
 {
-    let response = client.send()?;
+    let response = client.send().await?;
     let status = response.status();
-    let body = response.text()?;
+    let body = response.text().await?;
 
     match status {
         StatusCode::OK => Ok(serde_json::from_str::<T>(&body)?),

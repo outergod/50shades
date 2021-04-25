@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::ops::Sub;
 use std::{thread, time};
 
-fn follow_graylog(
+async fn follow_graylog(
     node: &GraylogNode,
     node_name: &str,
     handlebars: &Handlebars,
@@ -52,14 +52,14 @@ fn follow_graylog(
         params.insert("from", from);
         params.insert("to", String::from(now));
 
-        graylog::run(&client, &params, &handlebars)?;
+        graylog::run(&client, &params, &handlebars).await?;
 
         from = String::from(now);
         thread::sleep(sleep);
     }
 }
 
-fn follow_elastic(
+async fn follow_elastic(
     node: &ElasticNode,
     node_name: &str,
     handlebars: &Handlebars,
@@ -106,14 +106,14 @@ fn follow_elastic(
             },
         };
 
-        elastic::run(&client, &request, &handlebars)?;
+        elastic::run(&client, &request, &handlebars).await?;
 
         from = String::from(now);
         thread::sleep(sleep);
     }
 }
 
-pub fn run(
+pub async fn run(
     config: Result<Config, Error>,
     node_name: String,
     template: String,
@@ -134,10 +134,10 @@ pub fn run(
 
     match node {
         Node::Graylog(node) => {
-            follow_graylog(node, &node_name, &handlebars, &from, latency, poll, &query)
+            follow_graylog(node, &node_name, &handlebars, &from, latency, poll, &query).await
         }
         Node::Elastic(node) => {
-            follow_elastic(node, &node_name, &handlebars, &from, latency, poll, &query)
+            follow_elastic(node, &node_name, &handlebars, &from, latency, poll, &query).await
         }
         Node::Google => panic!("Unimplemented"),
     }

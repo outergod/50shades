@@ -24,7 +24,7 @@ use handlebars::Handlebars;
 use maplit::hashmap;
 use std::collections::HashMap;
 
-fn query_graylog(
+async fn query_graylog(
     node: &GraylogNode,
     node_name: &str,
     handlebars: &Handlebars,
@@ -44,12 +44,12 @@ fn query_graylog(
     params.insert("from", from);
     params.insert("to", to);
 
-    graylog::run(&client, &params, &handlebars)?;
+    graylog::run(&client, &params, &handlebars).await?;
 
     Ok(())
 }
 
-fn query_elastic(
+async fn query_elastic(
     node: &ElasticNode,
     node_name: &str,
     handlebars: &Handlebars,
@@ -90,11 +90,11 @@ fn query_elastic(
         },
     };
 
-    elastic::run(&client, &request, &handlebars)?;
+    elastic::run(&client, &request, &handlebars).await?;
     Ok(())
 }
 
-pub fn run(
+pub async fn run(
     config: Result<Config, Error>,
     node_name: String,
     template: String,
@@ -113,12 +113,12 @@ pub fn run(
     let handlebars = template::compile(&template)?;
 
     match node {
-        Node::Graylog(node) => query_graylog(node, &node_name, &handlebars, &from, &to, &query),
-        Node::Elastic(node) => query_elastic(node, &node_name, &handlebars, &from, &to, &query),
-        Node::Google => {
-            let mut rt = tokio::runtime::Runtime::new().unwrap();
-            let future = google::run(&handlebars);
-            rt.block_on(future)
+        Node::Graylog(node) => {
+            query_graylog(node, &node_name, &handlebars, &from, &to, &query).await
         }
+        Node::Elastic(node) => {
+            query_elastic(node, &node_name, &handlebars, &from, &to, &query).await
+        }
+        Node::Google => google::run(&handlebars).await,
     }
 }

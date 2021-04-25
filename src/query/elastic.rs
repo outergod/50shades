@@ -21,8 +21,8 @@ use crate::template;
 use failure::Error;
 use handlebars::Handlebars;
 use reqwest;
-use reqwest::blocking::{Client, RequestBuilder};
 use reqwest::header::ACCEPT;
+use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -157,13 +157,13 @@ fn handle_response(response: Response, handlebars: &Handlebars) {
     }
 }
 
-pub fn run(
+pub async fn run(
     client: &RequestBuilder,
     request: &Request,
     handlebars: &Handlebars,
 ) -> Result<(), Error> {
     let client = client.try_clone().unwrap().json(request);
-    let response = match search::<Response>(client) {
+    let response = match search::<Response>(client).await {
         Ok(response) => response,
         Err(ResponseError::UnexpectedStatus(status, reason)) => {
             return Err(ResponseError::UnexpectedStatus(
