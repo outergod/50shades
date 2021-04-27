@@ -44,8 +44,10 @@ use tonic::{
 const ENDPOINT: &str = "https://logging.googleapis.com";
 const DOMAIN: &str = "logging.googleapis.com";
 const SCOPES: [&str; 1] = ["https://www.googleapis.com/auth/logging.read"];
+const AUDIT_TYPE_URL: &str = "type.googleapis.com/google.cloud.audit.AuditLog";
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct MonitoredResource {
     pub r#type: String,
     pub labels: HashMap<String, String>,
@@ -60,7 +62,8 @@ impl From<google::api::MonitoredResource> for MonitoredResource {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct HttpRequest {
     pub request_method: String,
     pub request_url: String,
@@ -106,7 +109,8 @@ impl From<google::logging::r#type::HttpRequest> for HttpRequest {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct LogEntryOperation {
     pub id: String,
     pub producer: String,
@@ -125,7 +129,8 @@ impl From<google::logging::v2::LogEntryOperation> for LogEntryOperation {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct LogEntrySourceLocation {
     pub file: String,
     pub line: i64,
@@ -142,7 +147,8 @@ impl From<google::logging::v2::LogEntrySourceLocation> for LogEntrySourceLocatio
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(transparent)]
 pub struct Struct {
     fields: BTreeMap<String, Value>,
 }
@@ -159,7 +165,8 @@ impl From<prost_types::Struct> for Struct {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(transparent)]
 pub struct ListValue {
     values: Vec<Value>,
 }
@@ -176,7 +183,8 @@ impl From<prost_types::ListValue> for ListValue {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(untagged)]
 pub enum Kind {
     NullValue(i32),
     NumberValue(f64),
@@ -199,7 +207,8 @@ impl From<prost_types::value::Kind> for Kind {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(transparent)]
 pub struct Value {
     kind: Option<Kind>,
 }
@@ -212,7 +221,8 @@ impl From<prost_types::Value> for Value {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceLocation {
     pub current_locations: Vec<String>,
     pub original_locations: Vec<String>,
@@ -235,7 +245,8 @@ impl From<google::cloud::audit::ResourceLocation> for ResourceLocation {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Status {
     pub code: i32,
     pub message: String,
@@ -250,7 +261,8 @@ impl From<google::rpc::Status> for Status {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthenticationInfo {
     pub principal_email: String,
     pub authority_selector: String,
@@ -271,7 +283,8 @@ impl From<google::cloud::audit::AuthenticationInfo> for AuthenticationInfo {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthorizationInfo {
     pub resource: String,
     pub permission: String,
@@ -288,7 +301,8 @@ impl From<google::cloud::audit::AuthorizationInfo> for AuthorizationInfo {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct RequestMetadata {
     pub caller_ip: String,
     pub caller_supplied_user_agent: String,
@@ -305,7 +319,8 @@ impl From<google::cloud::audit::RequestMetadata> for RequestMetadata {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditLog {
     pub service_name: String,
     pub method_name: String,
@@ -324,7 +339,6 @@ pub struct AuditLog {
 
 impl From<google::cloud::audit::AuditLog> for AuditLog {
     fn from(log: google::cloud::audit::AuditLog) -> Self {
-        eprintln!("{:?}", log);
         Self {
             service_name: log.service_name,
             method_name: log.method_name,
@@ -347,15 +361,15 @@ impl From<google::cloud::audit::AuditLog> for AuditLog {
     }
 }
 
-#[derive(Serialize)]
-pub enum Payload {
-    String(String),
-    Json(BTreeMap<String, Value>),
+#[derive(Serialize, Debug)]
+#[serde(tag = "@type")]
+pub enum ProtoPayload {
+    #[serde(rename(serialize = AUDIT_TYPE_URL))]
     AuditLog(AuditLog),
-    // RequestLog(RequestLog),
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct LogEntry {
     pub log_name: String,
     pub resource: Option<MonitoredResource>,
@@ -370,7 +384,9 @@ pub struct LogEntry {
     pub span_id: String,
     pub trace_sampled: bool,
     pub source_location: Option<LogEntrySourceLocation>,
-    pub payload: Option<Payload>,
+    pub text_payload: Option<String>,
+    pub json_payload: Option<BTreeMap<String, Value>>,
+    pub proto_payload: Option<ProtoPayload>,
 }
 
 #[derive(Debug, Fail)]
@@ -381,16 +397,13 @@ enum DecodePayloadError {
     UnsupportedType { type_url: String },
 }
 
-fn decode_payload(payload: prost_types::Any) -> Result<Payload, DecodePayloadError> {
+fn decode_payload(payload: prost_types::Any) -> Result<ProtoPayload, DecodePayloadError> {
     let value = payload.value.as_slice();
-    eprintln!("{}", payload.type_url);
     match payload.type_url.as_str() {
-        "type.googleapis.com/google.cloud.audit.AuditLog" => {
-            match google::cloud::audit::AuditLog::decode(value) {
-                Ok(log) => Ok(Payload::AuditLog(log.into())),
-                Err(e) => Err(DecodePayloadError::Decode(e)),
-            }
-        }
+        AUDIT_TYPE_URL => match google::cloud::audit::AuditLog::decode(value) {
+            Ok(log) => Ok(ProtoPayload::AuditLog(log.into())),
+            Err(e) => Err(DecodePayloadError::Decode(e)),
+        },
         url => Err(DecodePayloadError::UnsupportedType {
             type_url: url.to_string(),
         }),
@@ -399,7 +412,27 @@ fn decode_payload(payload: prost_types::Any) -> Result<Payload, DecodePayloadErr
 
 impl From<google::logging::v2::LogEntry> for LogEntry {
     fn from(entry: google::logging::v2::LogEntry) -> Self {
-        eprintln!("{:?}", entry.payload);
+        let (text_payload, json_payload, proto_payload) = match entry.payload {
+            Some(google::logging::v2::log_entry::Payload::ProtoPayload(payload)) => {
+                match decode_payload(payload) {
+                    Ok(payload) => (None, None, Some(payload)),
+                    Err(e) => (Some(e.to_string()), None, None),
+                }
+            }
+            Some(google::logging::v2::log_entry::Payload::TextPayload(text)) => {
+                (Some(text), None, None)
+            }
+            Some(google::logging::v2::log_entry::Payload::JsonPayload(json)) => {
+                let json = json
+                    .fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone().into()))
+                    .collect();
+                (None, Some(json), None)
+            }
+            None => (None, None, None),
+        };
+
         Self {
             log_name: entry.log_name,
             resource: entry.resource.map(|resource| resource.into()),
@@ -426,23 +459,9 @@ impl From<google::logging::v2::LogEntry> for LogEntry {
             span_id: entry.span_id,
             trace_sampled: entry.trace_sampled,
             source_location: entry.source_location.map(|location| location.into()),
-            payload: entry.payload.map(|payload| match payload {
-                google::logging::v2::log_entry::Payload::ProtoPayload(payload) => {
-                    match decode_payload(payload) {
-                        Ok(payload) => payload,
-                        Err(e) => Payload::String(e.to_string()),
-                    }
-                }
-                google::logging::v2::log_entry::Payload::TextPayload(text) => Payload::String(text),
-                google::logging::v2::log_entry::Payload::JsonPayload(json) => {
-                    let json = json
-                        .fields
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone().into()))
-                        .collect();
-                    Payload::Json(json)
-                }
-            }),
+            text_payload,
+            json_payload,
+            proto_payload,
         }
     }
 }
