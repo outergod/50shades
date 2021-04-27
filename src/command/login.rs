@@ -39,7 +39,7 @@ pub fn run(config: Result<Config, Error>, node: String) -> Result<(), Error> {
             user: Some(user), ..
         }) => &user,
         Node::Elastic(ElasticNode { user: None, .. }) => return Err(NoUserError.into()),
-        Node::Google => return Err(NoUserRequiredError.into()),
+        Node::Google(_) => return Err(NoUserRequiredError.into()),
     };
 
     password::prompt(&node, user)

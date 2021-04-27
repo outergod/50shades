@@ -34,7 +34,7 @@ const DEFAULT_TEMPLATE: &str = r#"[{{default container_name "-"}}] {{{message}}}
 pub enum Node {
     Graylog(GraylogNode),
     Elastic(ElasticNode),
-    Google,
+    Google(GoogleNode),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -47,6 +47,11 @@ pub struct GraylogNode {
 pub struct ElasticNode {
     pub url: String,
     pub user: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GoogleNode {
+    pub resources: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

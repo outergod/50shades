@@ -15,7 +15,7 @@
 // limitations under the License.
 
 use crate::config;
-use crate::config::{Config, ElasticNode, GraylogNode, NoConfigError, Node};
+use crate::config::{Config, ElasticNode, GoogleNode, GraylogNode, NoConfigError, Node};
 use crate::password;
 use dialoguer::{Input, PasswordInput, Select};
 use failure::{Error, Fail};
@@ -139,7 +139,7 @@ fn prompt(path: &str, node_name: &str) -> Result<(), Error> {
             match selections[n] {
                 "Graylog" => node = prompt_graylog(node_name),
                 "Elasticsearch" => node = prompt_elastic(node_name),
-                "Google" => node = Node::Google,
+                "Google" => node = Node::Google(GoogleNode { resources: vec![] }),
                 &_ => panic!(),
             }
 
@@ -160,7 +160,7 @@ fn prompt(path: &str, node_name: &str) -> Result<(), Error> {
             password: prompt_password(),
         }),
         Node::Elastic(ElasticNode { user: None, .. }) => None,
-        Node::Google => None,
+        Node::Google(_) => None,
     };
 
     let config = Config {

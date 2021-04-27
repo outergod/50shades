@@ -16,6 +16,7 @@
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use failure::Error;
+use failure::Fail;
 use googapis::{
     google::{
         self,
@@ -27,8 +28,13 @@ use googapis::{
     CERTIFICATES,
 };
 use handlebars::Handlebars;
+use prost::{DecodeError, Message};
 use serde::Serialize;
-use std::{collections::HashMap, convert::TryInto, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+    time::Duration,
+};
 use tonic::{
     metadata::MetadataValue,
     transport::{Certificate, Channel, ClientTlsConfig},
@@ -137,6 +143,219 @@ impl From<google::logging::v2::LogEntrySourceLocation> for LogEntrySourceLocatio
 }
 
 #[derive(Serialize)]
+pub struct Struct {
+    fields: BTreeMap<String, Value>,
+}
+
+impl From<prost_types::Struct> for Struct {
+    fn from(r#struct: prost_types::Struct) -> Self {
+        Self {
+            fields: r#struct
+                .fields
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone().into()))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct ListValue {
+    values: Vec<Value>,
+}
+
+impl From<prost_types::ListValue> for ListValue {
+    fn from(value: prost_types::ListValue) -> Self {
+        Self {
+            values: value
+                .values
+                .iter()
+                .map(|value| value.clone().into())
+                .collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub enum Kind {
+    NullValue(i32),
+    NumberValue(f64),
+    StringValue(String),
+    BoolValue(bool),
+    StructValue(Struct),
+    ListValue(ListValue),
+}
+
+impl From<prost_types::value::Kind> for Kind {
+    fn from(kind: prost_types::value::Kind) -> Self {
+        match kind {
+            prost_types::value::Kind::NullValue(value) => Kind::NullValue(value),
+            prost_types::value::Kind::NumberValue(value) => Kind::NumberValue(value),
+            prost_types::value::Kind::StringValue(value) => Kind::StringValue(value),
+            prost_types::value::Kind::BoolValue(value) => Kind::BoolValue(value),
+            prost_types::value::Kind::StructValue(value) => Kind::StructValue(value.into()),
+            prost_types::value::Kind::ListValue(value) => Kind::ListValue(value.into()),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct Value {
+    kind: Option<Kind>,
+}
+
+impl From<prost_types::Value> for Value {
+    fn from(value: prost_types::Value) -> Self {
+        Self {
+            kind: value.kind.map(|kind| kind.into()),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct ResourceLocation {
+    pub current_locations: Vec<String>,
+    pub original_locations: Vec<String>,
+}
+
+impl From<google::cloud::audit::ResourceLocation> for ResourceLocation {
+    fn from(location: google::cloud::audit::ResourceLocation) -> Self {
+        Self {
+            current_locations: location
+                .current_locations
+                .iter()
+                .map(|s| s.clone().into())
+                .collect(),
+            original_locations: location
+                .original_locations
+                .iter()
+                .map(|s| s.clone().into())
+                .collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct Status {
+    pub code: i32,
+    pub message: String,
+}
+
+impl From<google::rpc::Status> for Status {
+    fn from(status: google::rpc::Status) -> Self {
+        Self {
+            code: status.code,
+            message: status.message,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct AuthenticationInfo {
+    pub principal_email: String,
+    pub authority_selector: String,
+    pub third_party_principal: Option<Struct>,
+    pub service_account_key_name: String,
+    pub principal_subject: String,
+}
+
+impl From<google::cloud::audit::AuthenticationInfo> for AuthenticationInfo {
+    fn from(info: google::cloud::audit::AuthenticationInfo) -> Self {
+        Self {
+            principal_email: info.principal_email,
+            authority_selector: info.authority_selector,
+            third_party_principal: info.third_party_principal.map(|principal| principal.into()),
+            service_account_key_name: info.service_account_key_name,
+            principal_subject: info.principal_subject,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct AuthorizationInfo {
+    pub resource: String,
+    pub permission: String,
+    pub granted: bool,
+}
+
+impl From<google::cloud::audit::AuthorizationInfo> for AuthorizationInfo {
+    fn from(info: google::cloud::audit::AuthorizationInfo) -> Self {
+        Self {
+            resource: info.resource,
+            permission: info.permission,
+            granted: info.granted,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct RequestMetadata {
+    pub caller_ip: String,
+    pub caller_supplied_user_agent: String,
+    pub caller_network: String,
+}
+
+impl From<google::cloud::audit::RequestMetadata> for RequestMetadata {
+    fn from(data: google::cloud::audit::RequestMetadata) -> Self {
+        Self {
+            caller_ip: data.caller_ip,
+            caller_supplied_user_agent: data.caller_supplied_user_agent,
+            caller_network: data.caller_network,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct AuditLog {
+    pub service_name: String,
+    pub method_name: String,
+    pub resource_name: String,
+    pub resource_location: Option<ResourceLocation>,
+    pub resource_original_state: Option<Struct>,
+    pub num_response_items: i64,
+    pub status: Option<Status>,
+    pub authentication_info: Option<AuthenticationInfo>,
+    pub authorization_info: Vec<AuthorizationInfo>,
+    pub request_metadata: Option<RequestMetadata>,
+    pub request: Option<Struct>,
+    pub response: Option<Struct>,
+    pub metadata: Option<Struct>,
+}
+
+impl From<google::cloud::audit::AuditLog> for AuditLog {
+    fn from(log: google::cloud::audit::AuditLog) -> Self {
+        eprintln!("{:?}", log);
+        Self {
+            service_name: log.service_name,
+            method_name: log.method_name,
+            resource_name: log.resource_name,
+            resource_location: log.resource_location.map(|location| location.into()),
+            resource_original_state: log.resource_original_state.map(|state| state.into()),
+            num_response_items: log.num_response_items,
+            status: log.status.map(|status| status.into()),
+            authentication_info: log.authentication_info.map(|info| info.into()),
+            authorization_info: log
+                .authorization_info
+                .iter()
+                .map(|info| info.clone().into())
+                .collect(),
+            request_metadata: log.request_metadata.map(|data| data.into()),
+            request: log.request.map(|request| request.into()),
+            response: log.response.map(|response| response.into()),
+            metadata: log.metadata.map(|data| data.into()),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub enum Payload {
+    String(String),
+    Json(BTreeMap<String, Value>),
+    AuditLog(AuditLog),
+    // RequestLog(RequestLog),
+}
+
+#[derive(Serialize)]
 pub struct LogEntry {
     pub log_name: String,
     pub resource: Option<MonitoredResource>,
@@ -151,11 +370,36 @@ pub struct LogEntry {
     pub span_id: String,
     pub trace_sampled: bool,
     pub source_location: Option<LogEntrySourceLocation>,
-    pub payload: Option<String>,
+    pub payload: Option<Payload>,
+}
+
+#[derive(Debug, Fail)]
+enum DecodePayloadError {
+    #[fail(display = "{}", _0)]
+    Decode(DecodeError),
+    #[fail(display = "Not a supported payload type: {}", type_url)]
+    UnsupportedType { type_url: String },
+}
+
+fn decode_payload(payload: prost_types::Any) -> Result<Payload, DecodePayloadError> {
+    let value = payload.value.as_slice();
+    eprintln!("{}", payload.type_url);
+    match payload.type_url.as_str() {
+        "type.googleapis.com/google.cloud.audit.AuditLog" => {
+            match google::cloud::audit::AuditLog::decode(value) {
+                Ok(log) => Ok(Payload::AuditLog(log.into())),
+                Err(e) => Err(DecodePayloadError::Decode(e)),
+            }
+        }
+        url => Err(DecodePayloadError::UnsupportedType {
+            type_url: url.to_string(),
+        }),
+    }
 }
 
 impl From<google::logging::v2::LogEntry> for LogEntry {
     fn from(entry: google::logging::v2::LogEntry) -> Self {
+        eprintln!("{:?}", entry.payload);
         Self {
             log_name: entry.log_name,
             resource: entry.resource.map(|resource| resource.into()),
@@ -182,7 +426,23 @@ impl From<google::logging::v2::LogEntry> for LogEntry {
             span_id: entry.span_id,
             trace_sampled: entry.trace_sampled,
             source_location: entry.source_location.map(|location| location.into()),
-            payload: Some("".into()),
+            payload: entry.payload.map(|payload| match payload {
+                google::logging::v2::log_entry::Payload::ProtoPayload(payload) => {
+                    match decode_payload(payload) {
+                        Ok(payload) => payload,
+                        Err(e) => Payload::String(e.to_string()),
+                    }
+                }
+                google::logging::v2::log_entry::Payload::TextPayload(text) => Payload::String(text),
+                google::logging::v2::log_entry::Payload::JsonPayload(json) => {
+                    let json = json
+                        .fields
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone().into()))
+                        .collect();
+                    Payload::Json(json)
+                }
+            }),
         }
     }
 }
@@ -222,19 +482,15 @@ fn handle_response(response: Response<ListLogEntriesResponse>, handlebars: &Hand
     }
 }
 
-pub async fn run(handlebars: &Handlebars) -> Result<(), Error> {
+pub async fn run(request: ListLogEntriesRequest, handlebars: &Handlebars) -> Result<(), Error> {
     let mut client = client().await?;
-    let query = client.list_log_entries(Request::new(ListLogEntriesRequest {
-        resource_names: (["projects/solvemate-prod".into()]).to_vec(),
-        ..Default::default()
-    }));
+    let query = client.list_log_entries(Request::new(request));
 
     let response = match query.await {
         Ok(response) => response,
         Err(e) => return Err(e.into()),
     };
 
-    // println!("RESPONSE={:?}", response);
     handle_response(response, handlebars);
 
     Ok(())

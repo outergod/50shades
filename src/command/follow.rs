@@ -139,6 +139,6 @@ pub async fn run(
         Node::Elastic(node) => {
             follow_elastic(node, &node_name, &handlebars, &from, latency, poll, &query).await
         }
-        Node::Google => panic!("Unimplemented"),
+        Node::Google(_) => panic!("Unimplemented"),
     }
 }

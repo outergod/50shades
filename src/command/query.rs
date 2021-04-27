@@ -15,11 +15,12 @@
 // limitations under the License.
 
 use crate::config;
-use crate::config::{Config, ElasticNode, GraylogNode, Node};
+use crate::config::{Config, ElasticNode, GoogleNode, GraylogNode, Node};
 use crate::datetime;
 use crate::query::{elastic, google, graylog};
 use crate::template;
 use failure::Error;
+use googapis::google::logging::v2::ListLogEntriesRequest;
 use handlebars::Handlebars;
 use maplit::hashmap;
 use std::collections::HashMap;
@@ -94,6 +95,32 @@ async fn query_elastic(
     Ok(())
 }
 
+async fn query_google(
+    node: &GoogleNode,
+    handlebars: &Handlebars,
+    from: &str,
+    to: &str,
+    query: &[String],
+) -> Result<(), Error> {
+    let from = datetime::parse_timestamp(&from)?.0;
+    let to = datetime::parse_timestamp(&to)?.1;
+    let range = format!(r#"timestamp >= "{}" AND timestamp < "{}""#, from, to);
+    let query = if query.is_empty() {
+        range
+    } else {
+        format!("{} AND {}", range, query.join(" "))
+    };
+
+    let request = ListLogEntriesRequest {
+        resource_names: node.resources.clone(),
+        filter: query,
+        ..Default::default()
+    };
+
+    google::run(request, &handlebars).await?;
+    Ok(())
+}
+
 pub async fn run(
     config: Result<Config, Error>,
     node_name: String,
@@ -119,6 +146,6 @@ pub async fn run(
         Node::Elastic(node) => {
             query_elastic(node, &node_name, &handlebars, &from, &to, &query).await
         }
-        Node::Google => google::run(&handlebars).await,
+        Node::Google(node) => query_google(node, &handlebars, &from, &to, &query).await,
     }
 }
