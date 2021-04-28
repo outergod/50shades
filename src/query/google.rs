@@ -32,7 +32,7 @@ use prost::{DecodeError, Message};
 use serde::Serialize;
 use std::{
     collections::{BTreeMap, HashMap},
-    convert::TryInto,
+    convert::{TryFrom, TryInto},
     time::Duration,
 };
 use tonic::{
@@ -390,7 +390,7 @@ pub struct LogEntry {
 }
 
 #[derive(Debug, Fail)]
-enum DecodePayloadError {
+pub enum DecodePayloadError {
     #[fail(display = "{}", _0)]
     Decode(DecodeError),
     #[fail(display = "Not a supported payload type: {}", type_url)]
@@ -410,13 +410,15 @@ fn decode_payload(payload: prost_types::Any) -> Result<ProtoPayload, DecodePaylo
     }
 }
 
-impl From<google::logging::v2::LogEntry> for LogEntry {
-    fn from(entry: google::logging::v2::LogEntry) -> Self {
+impl TryFrom<google::logging::v2::LogEntry> for LogEntry {
+    type Error = DecodePayloadError;
+
+    fn try_from(entry: google::logging::v2::LogEntry) -> Result<Self, Self::Error> {
         let (text_payload, json_payload, proto_payload) = match entry.payload {
             Some(google::logging::v2::log_entry::Payload::ProtoPayload(payload)) => {
                 match decode_payload(payload) {
                     Ok(payload) => (None, None, Some(payload)),
-                    Err(e) => (Some(e.to_string()), None, None),
+                    Err(e) => Err(e)?,
                 }
             }
             Some(google::logging::v2::log_entry::Payload::TextPayload(text)) => {
@@ -433,7 +435,7 @@ impl From<google::logging::v2::LogEntry> for LogEntry {
             None => (None, None, None),
         };
 
-        Self {
+        Ok(Self {
             log_name: entry.log_name,
             resource: entry.resource.map(|resource| resource.into()),
             timestamp: entry.timestamp.map(|timestamp| {
@@ -462,7 +464,7 @@ impl From<google::logging::v2::LogEntry> for LogEntry {
             text_payload,
             json_payload,
             proto_payload,
-        }
+        })
     }
 }
 
@@ -499,9 +501,12 @@ fn handle_response(
     let response = response.into_inner();
 
     for entry in response.entries.iter() {
-        match crate::template::render(handlebars, &LogEntry::from(entry.clone())) {
-            Ok(s) => println!("{}", &s),
-            Err(e) => eprintln!("Could not format line: {:?}", e),
+        match LogEntry::try_from(entry.clone()) {
+            Ok(log) => match crate::template::render(handlebars, &log) {
+                Ok(s) => println!("{}", &s),
+                Err(e) => eprintln!("Could not format line: {:?}", e),
+            },
+            Err(e) => eprintln!("Could not decode log entry: {}", e),
         }
     }
 
