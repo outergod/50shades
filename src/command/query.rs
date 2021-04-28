@@ -114,6 +114,7 @@ async fn query_google(
     let request = ListLogEntriesRequest {
         resource_names: node.resources.clone(),
         filter: query,
+        page_size: 1000,
         ..Default::default()
     };
 

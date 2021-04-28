@@ -492,25 +492,49 @@ pub async fn client() -> Result<LoggingServiceV2Client<Channel>, Error> {
     ))
 }
 
-fn handle_response(response: Response<ListLogEntriesResponse>, handlebars: &Handlebars) {
-    for entry in response.into_inner().entries.iter() {
+fn handle_response(
+    response: Response<ListLogEntriesResponse>,
+    handlebars: &Handlebars,
+) -> Option<String> {
+    let response = response.into_inner();
+
+    for entry in response.entries.iter() {
         match crate::template::render(handlebars, &LogEntry::from(entry.clone())) {
             Ok(s) => println!("{}", &s),
             Err(e) => eprintln!("Could not format line: {:?}", e),
         }
     }
+
+    if response.next_page_token.is_empty() {
+        None
+    } else {
+        Some(response.next_page_token)
+    }
 }
 
 pub async fn run(request: ListLogEntriesRequest, handlebars: &Handlebars) -> Result<(), Error> {
     let mut client = client().await?;
-    let query = client.list_log_entries(Request::new(request));
+    let query = client.list_log_entries(Request::new(request.clone()));
 
     let response = match query.await {
         Ok(response) => response,
         Err(e) => return Err(e.into()),
     };
 
-    handle_response(response, handlebars);
+    let mut token = handle_response(response, handlebars);
+
+    while let Some(page_token) = token {
+        let mut request = request.clone();
+        request.page_token = page_token;
+        let query = client.list_log_entries(Request::new(request));
+
+        let response = match query.await {
+            Ok(response) => response,
+            Err(e) => return Err(e.into()),
+        };
+
+        token = handle_response(response, handlebars);
+    }
 
     Ok(())
 }
