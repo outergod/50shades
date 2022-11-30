@@ -40,7 +40,7 @@ fn query_graylog(
     let mut params = HashMap::new();
     graylog::assign_query(&query, &mut params);
 
-    params.insert("limit", "0".into());
+    params.insert("limit", "10000".into());
     params.insert("from", from);
     params.insert("to", to);
 
