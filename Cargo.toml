@@ -1,7 +1,7 @@
 [package]
 name = "fifty-shades"
-version = "0.2.0"
-authors = ["Alexander Kahl <ak@communicatio.com>"]
+version = "0.2.1"
+authors = ["Alexander Dorn <ad@not.one>"]
 edition = "2018"
 license = "Apache-2.0"
 description = "Graylog REST API client written in Rust"
