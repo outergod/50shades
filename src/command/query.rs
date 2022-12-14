@@ -118,7 +118,7 @@ async fn query_google(
         ..Default::default()
     };
 
-    google::run(request, &handlebars).await?;
+    google::query(request, &handlebars).await?;
     Ok(())
 }
 

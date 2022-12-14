@@ -15,12 +15,13 @@
 // limitations under the License.
 
 use crate::config;
-use crate::config::{Config, ElasticNode, GraylogNode, Node};
+use crate::config::{Config, ElasticNode, GoogleNode, GraylogNode, Node};
 use crate::datetime;
-use crate::query::{elastic, graylog};
+use crate::query::{elastic, google, graylog};
 use crate::template;
 use chrono::prelude::*;
 use failure::Error;
+use googapis::google::logging::v2::TailLogEntriesRequest;
 use handlebars::Handlebars;
 use maplit::hashmap;
 use std::collections::HashMap;
@@ -113,6 +114,30 @@ async fn follow_elastic(
     }
 }
 
+async fn follow_google(
+    node: &GoogleNode,
+    handlebars: &Handlebars,
+    from: &str,
+    query: &[String],
+) -> Result<(), Error> {
+    let from = datetime::parse_timestamp(&from)?.0;
+    let range = format!(r#"timestamp >= "{}""#, from);
+    let query = if query.is_empty() {
+        range
+    } else {
+        format!("{} AND {}", range, query.join(" "))
+    };
+
+    let request = TailLogEntriesRequest {
+        resource_names: node.resources.clone(),
+        filter: query,
+        ..Default::default()
+    };
+
+    google::follow(request, &handlebars).await?;
+    Ok(())
+}
+
 pub async fn run(
     config: Result<Config, Error>,
     node_name: String,
@@ -139,6 +164,6 @@ pub async fn run(
         Node::Elastic(node) => {
             follow_elastic(node, &node_name, &handlebars, &from, latency, poll, &query).await
         }
-        Node::Google(_) => panic!("Unimplemented"),
+        Node::Google(node) => follow_google(node, &handlebars, &from, &query).await,
     }
 }

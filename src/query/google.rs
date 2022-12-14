@@ -17,12 +17,14 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use failure::Error;
 use failure::Fail;
+use futures_util::stream;
 use googapis::{
     google::{
         self,
         logging::v2::{
-            logging_service_v2_client::LoggingServiceV2Client, ListLogEntriesRequest,
-            ListLogEntriesResponse,
+            logging_service_v2_client::LoggingServiceV2Client,
+            tail_log_entries_response::suppression_info, ListLogEntriesRequest,
+            ListLogEntriesResponse, TailLogEntriesRequest,
         },
     },
     CERTIFICATES,
@@ -494,13 +496,8 @@ pub async fn client() -> Result<LoggingServiceV2Client<Channel>, Error> {
     ))
 }
 
-fn handle_response(
-    response: Response<ListLogEntriesResponse>,
-    handlebars: &Handlebars,
-) -> Option<String> {
-    let response = response.into_inner();
-
-    for entry in response.entries.iter() {
+fn handle_entries(entries: Vec<google::logging::v2::LogEntry>, handlebars: &Handlebars) {
+    for entry in entries.iter() {
         match LogEntry::try_from(entry.clone()) {
             Ok(log) => match crate::template::render(handlebars, &log) {
                 Ok(s) => println!("{}", &s),
@@ -509,6 +506,15 @@ fn handle_response(
             Err(e) => eprintln!("Could not decode log entry: {}", e),
         }
     }
+}
+
+fn handle_query_response(
+    response: Response<ListLogEntriesResponse>,
+    handlebars: &Handlebars,
+) -> Option<String> {
+    let response = response.into_inner();
+
+    handle_entries(response.entries, handlebars);
 
     if response.next_page_token.is_empty() {
         None
@@ -517,7 +523,7 @@ fn handle_response(
     }
 }
 
-pub async fn run(request: ListLogEntriesRequest, handlebars: &Handlebars) -> Result<(), Error> {
+pub async fn query(request: ListLogEntriesRequest, handlebars: &Handlebars) -> Result<(), Error> {
     let mut client = client().await?;
     let query = client.list_log_entries(Request::new(request.clone()));
 
@@ -526,7 +532,7 @@ pub async fn run(request: ListLogEntriesRequest, handlebars: &Handlebars) -> Res
         Err(e) => return Err(e.into()),
     };
 
-    let mut token = handle_response(response, handlebars);
+    let mut token = handle_query_response(response, handlebars);
 
     while let Some(page_token) = token {
         let mut request = request.clone();
@@ -538,7 +544,30 @@ pub async fn run(request: ListLogEntriesRequest, handlebars: &Handlebars) -> Res
             Err(e) => return Err(e.into()),
         };
 
-        token = handle_response(response, handlebars);
+        token = handle_query_response(response, handlebars);
+    }
+
+    Ok(())
+}
+
+pub async fn follow(request: TailLogEntriesRequest, handlebars: &Handlebars) -> Result<(), Error> {
+    let mut client = client().await?;
+    let query = client.tail_log_entries(Request::new(stream::repeat(request)));
+
+    let mut stream = query.await?.into_inner();
+    while let Some(response) = stream.message().await? {
+        eprintln!("XXX");
+        handle_entries(response.entries, handlebars);
+
+        for info in response.suppression_info.iter() {
+            let reason = match info.reason() {
+                suppression_info::Reason::Unspecified => "Unknown failure",
+                suppression_info::Reason::RateLimit => "Rate limit exceeded",
+                suppression_info::Reason::NotConsumed => "Consuming too slowly",
+            };
+
+            eprintln!("Skipped {} entries: {}", info.suppressed_count, reason);
+        }
     }
 
     Ok(())

@@ -36,6 +36,7 @@ prost = "0.7"
 prost-types = "0.7"
 googapis = { version = "0.4", features = ["google-logging-v2", "google-cloud-audit", "google-appengine-logging-v1"] }
 tokio = { version = "1.5.0", features = ["full"] }
+futures-util = "0.3"
 
 [build-dependencies]
 tonic-build = { version = "0.4", features = ["prost"] }

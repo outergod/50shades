@@ -583,6 +583,7 @@ dependencies = [
  "dirs",
  "exitfailure",
  "failure",
+ "futures-util",
  "gcp_auth",
  "googapis",
  "handlebars",
